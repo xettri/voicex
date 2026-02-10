@@ -1,0 +1,16 @@
+{
+  "name": "voicex",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently \"pnpm -F @voicex/audio-gateway dev\" \"pnpm -F @voicex/stt-service dev\" \"pnpm -F @voicex/llm-service dev\" \"pnpm -F @voicex/tts-service dev\" \"pnpm -F @voicex/conversation-orchestrator dev\" \"pnpm -F @voicex/kb-retriever dev\"",
+    "build": "pnpm -r build",
+    "clean": "rm -rf node_modules && pnpm -r clean"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.3",
+    "ts-node": "^10.9.2",
+    "nodemon": "^3.0.3",
+    "@types/node": "^20.11.5",
+    "concurrently": "^8.2.2"
+  }
+}
