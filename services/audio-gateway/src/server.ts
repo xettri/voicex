@@ -116,7 +116,10 @@ wss.on('connection', (ws: WebSocket, req) => {
 
     // It's audio data -> Forward to STT
     if (active.stt) {
+      // console.log(`Forwarding audio chunk (${message.length} bytes) to STT`);
       sttWs.send(message);
+    } else {
+      console.warn('STT not active, dropping audio chunk');
     }
   });
 

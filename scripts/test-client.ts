@@ -41,15 +41,19 @@ ws.on('open', () => {
   ws.send(JSON.stringify({ type: 'session_start' }));
 
   // 2. Simulate Audio Stream
-  console.log('Streaming audio...');
-  const audioData = getAudioData();
+  console.log('Waiting 2s for backend connections...');
+  setTimeout(() => {
+    console.log('Streaming audio...');
+    const audioData = getAudioData();
 
-  // Send in chunks
-  const chunkSize = 4096;
-  for (let i = 0; i < audioData.length; i += chunkSize) {
-    const chunk = audioData.subarray(i, i + chunkSize);
-    ws.send(chunk);
-  }
+    // Send in chunks
+    const chunkSize = 4096;
+    for (let i = 0; i < audioData.length; i += chunkSize) {
+      const chunk = audioData.subarray(i, i + chunkSize);
+      ws.send(chunk);
+    }
+    console.log('Audio streaming complete. Waiting for response...');
+  }, 2000);
 
   // In a real test, you'd want actual speech audio to test STT/LLM response
   console.log('Audio streaming complete (Silence). Expecting valid connection handling but no STT output unless you use real speech file.');
