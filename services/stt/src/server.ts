@@ -19,7 +19,7 @@ const server = app.listen(port, () => {
 });
 
 // STT Pipeline using Xenova Transformers (Pure JS/Wasm Whisper)
-const TARGET_MODEL = 'Xenova/whisper-tiny.en';
+const TARGET_MODEL = 'Xenova/whisper-base.en';
 let transcriber: any = null;
 
 (async () => {
@@ -86,11 +86,8 @@ wss.on('connection', (ws: WebSocket) => {
           console.log('Running pipeline inference...');
           // pipeline expects Float32Array suitable for 16kHz
           const output = await transcriber(inputAudio, {
-            chunk_length_s: 30, // Whisper works on 30s chunks ideally
-            stride_length_s: 5,
             language: 'english',
             task: 'transcribe',
-            return_timestamps: false
           });
 
           const text = output.text;
@@ -125,11 +122,8 @@ wss.on('connection', (ws: WebSocket) => {
 
       try {
         const output = await transcriber(inputAudio, {
-          chunk_length_s: 30,
-          stride_length_s: 5,
           language: 'english',
           task: 'transcribe',
-          return_timestamps: false
         });
 
         console.log('Flush Output Raw:', JSON.stringify(output));
