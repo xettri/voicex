@@ -1,3 +1,10 @@
 packages:
-  - "packages/*"
-  - "services/*"
+  - packages/*
+  - services/*
+
+ignoredBuiltDependencies:
+  - ffi-napi
+  - ref-napi
+
+onlyBuiltDependencies:
+  - sharp

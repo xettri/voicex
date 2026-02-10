@@ -7,10 +7,25 @@
     "clean": "rm -rf node_modules && pnpm -r clean"
   },
   "devDependencies": {
-    "typescript": "^5.3.3",
-    "ts-node": "^10.9.2",
-    "nodemon": "^3.0.3",
     "@types/node": "^20.11.5",
-    "concurrently": "^8.2.2"
+    "@types/ws": "^8.18.1",
+    "concurrently": "^8.2.2",
+    "node-gyp": "^12.2.0",
+    "nodemon": "^3.0.3",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3",
+    "ws": "^8.19.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "sharp",
+      "ref-napi",
+      "ffi-napi",
+      "vosk",
+      "protobufjs",
+      "esbuild",
+      "cpu-features",
+      "ssh2"
+    ]
   }
 }

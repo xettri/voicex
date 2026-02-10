@@ -1,86 +1,125 @@
 import express from 'express';
 import { WebSocketServer, WebSocket } from 'ws';
-import { createClient, LiveTranscriptionEvents } from '@deepgram/sdk';
+import { pipeline } from '@xenova/transformers';
+import { WaveFile } from 'wavefile';
 import dotenv from 'dotenv';
+import { TranscriptionEvent } from '@voicex/shared';
 
 dotenv.config();
 
 const app = express();
 const port = process.env.PORT || 3002;
 
-// Health check
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', service: 'stt-service' });
+  res.json({ status: 'ok', service: 'stt-service-whisper' });
 });
 
 const server = app.listen(port, () => {
-  console.log(`STT Service listening on port ${port}`);
+  console.log(`STT Service (Whisper) listening on port ${port}`);
 });
 
-// Deepgram Client
-const deepgram = createClient(process.env.DEEPGRAM_API_KEY || '');
+// STT Pipeline using Xenova Transformers (Pure JS/Wasm Whisper)
+const TARGET_MODEL = 'Xenova/whisper-tiny.en';
+let transcriber: any = null;
 
-// WebSocket Server for Internal Audio Streaming
+(async () => {
+  console.log(`Loading Whisper model: ${TARGET_MODEL}...`);
+  // 'automatic-speech-recognition' task
+  transcriber = await pipeline('automatic-speech-recognition', TARGET_MODEL);
+  console.log('Whisper model loaded successfully');
+})();
+
+
 const wss = new WebSocketServer({ server });
 
 wss.on('connection', (ws: WebSocket) => {
-  console.log('Orchestrator/Gateway connected to STT Service');
+  console.log('Client connected to STT Service');
 
-  let deepgramLive: any = null;
+  // We will accumulate audio chunks here and process them periodically or on silence detection
+  // For MVP, we can just process chunks as they come if they represent complete phrases,
+  // but typically streaming requires buffering.
+  // Let's implement a simple buffering strategy: Transcribe every ~3 seconds of audio or when buffer is full.
 
-  try {
-    deepgramLive = deepgram.listen.live({
-      model: 'nova-2',
-      language: 'en-US',
-      smart_format: true,
-      interim_results: true,
-      punctuate: true,
-      encoding: 'linear16',
-      sample_rate: 16000,
-    }); // check SDK docs for correct usage
+  let audioBuffer: number[] = [];
+  const SAMPLE_RATE = 16000;
+  const CHUNK_DURATION_SEC = 3;
+  const BUFFER_LIMIT = SAMPLE_RATE * CHUNK_DURATION_SEC;
 
-    // Listen for open event
-    deepgramLive.on(LiveTranscriptionEvents.Open, () => {
-      console.log('Connected to Deepgram');
-    });
+  ws.on('message', async (message: Buffer) => {
+    if (!transcriber) return;
 
-    deepgramLive.on(LiveTranscriptionEvents.Transcript, (data: any) => {
-      const transcript = data.channel.alternatives[0].transcript;
-      if (transcript && data.is_final) {
-        console.log('Final Transcript:', transcript);
-        // Send back to client
-        ws.send(JSON.stringify({ type: 'transcript', text: transcript, is_final: true }));
-      } else if (transcript) {
-        // Partial
-        ws.send(JSON.stringify({ type: 'transcript', text: transcript, is_final: false }));
+    // Message is likely raw PCM 16-bit mono 16kHz from Audio Gateway
+    // Only if it is binary
+    if (Buffer.isBuffer(message)) {
+      // Convert Buffer (Int16) to Float32 [-1, 1] for Transformers.js
+      const int16Data = new Int16Array(
+        message.buffer,
+        message.byteOffset,
+        message.byteLength / 2
+      );
+
+      for (let i = 0; i < int16Data.length; i++) {
+        audioBuffer.push(int16Data[i] / 32768.0);
       }
-    });
 
-    deepgramLive.on(LiveTranscriptionEvents.Error, (err: any) => {
-      console.error('Deepgram Error:', err);
-    });
+      // If buffer is large enough, transcribe
+      if (audioBuffer.length >= BUFFER_LIMIT) {
+        const inputAudio = new Float32Array(audioBuffer);
+        audioBuffer = []; // Clear buffer immediately to capture next phrase
 
-    deepgramLive.on(LiveTranscriptionEvents.Close, () => {
-      console.log('Deepgram connection closed');
-    });
+        // Run inference
+        try {
+          // pipeline expects Float32Array suitable for 16kHz
+          const output = await transcriber(inputAudio, {
+            chunk_length_s: 30, // Whisper works on 30s chunks ideally
+            stride_length_s: 5,
+            language: 'english',
+            task: 'transcribe',
+            return_timestamps: false
+          });
 
-  } catch (e) {
-    console.error('Failed to start Deepgram stream', e);
-    ws.close();
-    return;
-  }
-
-  ws.on('message', (message: Buffer) => {
-    // Forward audio to Deepgram
-    if (deepgramLive && deepgramLive.getReadyState() === 1) { // 1 = OPEN
-      deepgramLive.send(message);
+          const text = output.text;
+          if (text && text.trim().length > 0) {
+            const event: TranscriptionEvent = {
+              session_id: 'unknown',
+              text: text.trim(),
+              is_final: true, // In this simple chunking, we treat each inference as final for that chunk
+              confidence: 1.0
+            };
+            ws.send(JSON.stringify({ type: 'transcript', ...event }));
+          }
+        } catch (err) {
+          console.error('Transcription Error', err);
+        }
+      }
     }
   });
 
-  ws.on('close', () => {
-    console.log('Client disconnected from STT Service');
-    if (deepgramLive) {
-      deepgramLive.finish();
+  ws.on('close', async () => {
+    console.log('Client disconnected');
+
+    if (transcriber && audioBuffer.length > 0) {
+      console.log(`Flushing remaining ${audioBuffer.length} samples...`);
+      const inputAudio = new Float32Array(audioBuffer);
+      try {
+        const output = await transcriber(inputAudio, {
+          chunk_length_s: 30,
+          stride_length_s: 5,
+          language: 'english',
+          task: 'transcribe',
+          return_timestamps: false
+        });
+
+        const text = output.text;
+        if (text && text.trim().length > 0) {
+          console.log('Final Flush Transcript:', text.trim());
+          // We can't reply to the closed socket, but logging it proves it worked.
+          // In a real scenario, we might have a callback or push to a message queue.
+        }
+      } catch (err) {
+        console.error('Flush Transcription Error', err);
+      }
     }
+    audioBuffer = [];
   });
 });
