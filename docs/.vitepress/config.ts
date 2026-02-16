@@ -6,6 +6,7 @@ export default withMermaid(
     title: "Voicex",
     description: "Real-time AI voice assistant platform",
     srcDir: "src",
+    base: process.env.DOCS_BASE || "/",
     ignoreDeadLinks: true,
     head: [["link", { rel: "icon", href: "/favicon.ico" }]],
     themeConfig: {
