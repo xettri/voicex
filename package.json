@@ -1,0 +1,15 @@
+{
+  "name": "voicex",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm run --parallel dev",
+    "dev:frontend": "pnpm --filter frontend dev",
+    "dev:backend": "pnpm --filter voicex-backend dev",
+    "docs": "cd docs && pnpm dev",
+    "docs:build": "cd docs && npm run build"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19"
+  }
+}
