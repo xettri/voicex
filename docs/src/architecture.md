@@ -112,11 +112,11 @@ sequenceDiagram
     Note over Session,LLM: Pipeline starts
 
     Session->>LLM: prompt + history + user text
-    
+
     loop Token streaming
         LLM-->>Session: token
         Session->>Session: buffer tokens
-        
+
         alt Sentence complete (.!? or 60+ chars)
             Session->>TTS: sentence text
             TTS-->>Session: MP3 audio chunks
@@ -186,17 +186,17 @@ Every async operation accepts `AbortSignal` so nothing leaks when the user inter
 ```mermaid
 flowchart TB
     SPEAK["🎤 User starts speaking"] --> INT["interrupt()"]
-    
+
     INT --> STOP["channel.sendAudioStop()<br/><small>Client stops playback + clears queue</small>"]
     INT --> ABORT["abortController.abort()<br/><small>Signal propagates everywhere</small>"]
-    
+
     ABORT --> ALLM["❌ LLM fetch aborted<br/><small>HTTP stream cancelled</small>"]
     ABORT --> ATTS["❌ TTS stream destroyed<br/><small>Process killed / reader cancelled</small>"]
     ABORT --> ACHAIN["❌ TTS chain rejected<br/><small>Pending sentences skipped</small>"]
-    
+
     STOP --> CLIENT["Client receives audioStop"]
     CLIENT --> CLEAR["AudioPlayer.clearQueue()<br/><small>Stop current source, empty queue</small>"]
-    
+
     INT --> NEW["New AbortController created"]
     NEW --> PIPE["pipeline.run(newText, signal)<br/><small>Fresh pipeline starts</small>"]
 
@@ -479,13 +479,13 @@ gantt
     Browser starts playing    :crit, play, 700, 800
 ```
 
-| Stage | Provider | Typical Latency |
-|-------|----------|-----------------|
-| STT endpointing | Deepgram | ~300ms |
-| LLM first token | Groq | ~150-250ms |
-| TTS first audio | ElevenLabs | ~200-300ms |
-| Network + decode | WebSocket | ~50-100ms |
-| **Total to first audio** | | **~700-950ms** |
+| Stage                    | Provider   | Typical Latency |
+| ------------------------ | ---------- | --------------- |
+| STT endpointing          | Deepgram   | ~300ms          |
+| LLM first token          | Groq       | ~150-250ms      |
+| TTS first audio          | ElevenLabs | ~200-300ms      |
+| Network + decode         | WebSocket  | ~50-100ms       |
+| **Total to first audio** |            | **~700-950ms**  |
 
 ---
 
@@ -517,10 +517,10 @@ TTS providers return streaming MP3 chunks, but individual chunks aren't decodabl
 flowchart LR
     T1["token"] --> T2["token"] --> T3["token."] --> S1["✅ Sentence 1<br/><small>Send to TTS</small>"]
     T4["token"] --> T5["token!"] --> S2["✅ Sentence 2<br/><small>Send to TTS</small>"]
-    
+
     S1 --> TTS1["TTS chunks → combine → complete MP3"]
     S2 --> TTS2["TTS chunks → combine → complete MP3"]
-    
+
     TTS1 --> PLAY["▶️ Play sentence 1"]
     TTS2 --> PLAY2["▶️ Play sentence 2"]
 

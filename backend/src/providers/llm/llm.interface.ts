@@ -1,5 +1,5 @@
 export interface LLMMessage {
-  role: "system" | "user" | "assistant";
+  role: 'system' | 'user' | 'assistant';
   content: string;
 }
 
@@ -7,6 +7,6 @@ export interface LLMProvider {
   streamCompletion(
     messages: LLMMessage[],
     onToken: (token: string) => void,
-    signal?: AbortSignal
+    signal?: AbortSignal,
   ): Promise<void>;
 }

@@ -1,50 +1,84 @@
-import { createLogger } from "../shared/logger.js";
-import { createDeepgramProvider } from "../providers/stt/deepgram.provider.js";
-import { createLLMProvider } from "../providers/llm/llm.factory.js";
-import { createTTSProvider } from "../providers/tts/tts.factory.js";
-import { createVoicePipelineService } from "./voice-pipeline.service.js";
-import { getDb } from "../db/client.js";
-import { createSession, endSession } from "../repositories/session.repository.js";
-import { incrementUsage } from "../repositories/usage.repository.js";
-import { getHistory, saveHistory, type HistoryMessage } from "../repositories/conversation-history.repository.js";
-import type { CallChannel } from "../providers/call/call.interface.js";
+import { ObjectId } from 'mongodb';
+import { createLogger } from '../shared/logger.js';
+import { createDeepgramProvider } from '../providers/stt/deepgram.provider.js';
+import { createLLMProvider } from '../providers/llm/llm.factory.js';
+import { createTTSProvider } from '../providers/tts/tts.factory.js';
+import { createVoicePipelineService } from './voice-pipeline.service.js';
+import { finalizeCall } from './call-summary.service.js';
+import { getDb } from '../db/client.js';
+import {
+  createCall,
+  updateCallMetrics,
+  appendTranscript,
+} from '../repositories/call.repository.js';
+import {
+  getHistory,
+  saveHistory,
+  type HistoryMessage,
+} from '../repositories/conversation-history.repository.js';
+import type { CallChannel } from '../providers/call/call.interface.js';
+import type { Agent, AgentThresholds } from '../db/schema.js';
 
-const logger = createLogger("VoiceSession");
+const logger = createLogger('VoiceSession');
 
 type STTSession = { sendAudio: (chunk: ArrayBuffer) => void; close: () => void };
 
 export interface VoiceSessionConfig {
   deepgramApiKey: string;
-  llmProvider: "ollama" | "groq" | "openai";
+  llmProvider: 'ollama' | 'groq' | 'openai';
   ollamaBaseUrl?: string;
   groqApiKey?: string;
   openaiApiKey?: string;
   elevenLabsApiKey?: string;
   systemTts?: { cmd: string; ext: string };
   mongodbUri?: string;
-  audioFormat?: { encoding: "linear16" | "mulaw"; sampleRate: number };
+  audioFormat?: { encoding: 'linear16' | 'mulaw'; sampleRate: number };
+  agent?: Agent;
+  orgId?: string;
+  channel?: 'web' | 'phone';
 }
 
-const ECHO_SUPPRESSION_MS = 300;
+const INTERRUPT_SENSITIVITY: Record<AgentThresholds['interruptionSensitivity'], number> = {
+  low: 5,
+  medium: 2,
+  high: 1,
+};
 
 export function runVoiceSession(
   channel: CallChannel,
   sessionId: string,
   config: VoiceSessionConfig,
   clientId?: string,
-  historyKey?: string
+  historyKey?: string,
 ): void {
   let sttSession: STTSession | null = null;
-  const { deepgramApiKey, mongodbUri } = config;
+  const { deepgramApiKey, mongodbUri, agent } = config;
   const key = historyKey ?? sessionId;
+  const thresholds = agent?.thresholds ?? {
+    silenceTimeoutMs: 700,
+    maxCallDurationSec: 1800,
+    interruptionSensitivity: 'medium' as const,
+    endpointingMs: 200,
+  };
+  const echoMs =
+    thresholds.interruptionSensitivity === 'high'
+      ? 200
+      : thresholds.interruptionSensitivity === 'low'
+        ? 500
+        : 300;
+  const minInterruptLen = INTERRUPT_SENSITIVITY[thresholds.interruptionSensitivity];
 
-  if (mongodbUri) {
+  const orgId = config.orgId ? new ObjectId(config.orgId) : undefined;
+  const agentId = agent?._id ? new ObjectId(agent._id) : undefined;
+
+  if (mongodbUri && orgId && agentId) {
     getDb()
-      .then((db) => createSession(db, sessionId, clientId))
-      .catch((err) => logger.error("Failed to create session", err));
+      .then((db) => createCall(db, { orgId, agentId, sessionId, channel: config.channel ?? 'web' }))
+      .catch((err) => logger.error('Failed to create call record', err));
   }
 
-  const llm = createLLMProvider(config.llmProvider, {
+  const llmConfig = agent?.llm;
+  const llm = createLLMProvider(llmConfig?.provider ?? config.llmProvider, {
     ollamaBaseUrl: config.ollamaBaseUrl,
     groqApiKey: config.groqApiKey,
     openaiApiKey: config.openaiApiKey,
@@ -55,43 +89,70 @@ export function runVoiceSession(
   let pipelineAbortController: AbortController | null = null;
   let pipelineGeneration = 0;
   let assistantSpeaking = false;
-  const MAX_HISTORY = 20;
+  const MAX_HISTORY = 30;
   let conversationHistory: HistoryMessage[] = [];
+  const callStartTime = Date.now();
+  let callDurationTimer: ReturnType<typeof setTimeout> | null = null;
+
+  if (thresholds.maxCallDurationSec > 0) {
+    callDurationTimer = setTimeout(() => {
+      logger.info('Max call duration reached', {
+        sessionId,
+        maxSec: thresholds.maxCallDurationSec,
+      });
+      channel.sendError('Maximum call duration reached');
+      channel.close();
+    }, thresholds.maxCallDurationSec * 1000);
+  }
 
   getHistory(key).then((loaded) => {
     if (conversationHistory.length === 0) conversationHistory = loaded;
-    logger.info("History loaded", { key, count: conversationHistory.length });
+    logger.info('History loaded', { key, count: conversationHistory.length });
   });
 
   const interrupt = (): void => {
     const shouldInterrupt = assistantSpeaking || pipelineAbortController;
     if (!shouldInterrupt) return;
-
-    logger.info("Interrupting", { speaking: assistantSpeaking, pipelineActive: !!pipelineAbortController });
+    logger.info('Interrupting', {
+      speaking: assistantSpeaking,
+      pipelineActive: !!pipelineAbortController,
+    });
     channel.sendAudioStop?.();
     assistantSpeaking = false;
-
     if (pipelineAbortController) {
       pipelineAbortController.abort();
       pipelineAbortController = null;
+    }
+    if (mongodbUri) {
+      getDb()
+        .then((db) => updateCallMetrics(db, sessionId, { interruptions: 1 }))
+        .catch(() => {});
     }
   };
 
   const runPipeline = (text: string): void => {
     interrupt();
-
     pipelineGeneration++;
     const gen = pipelineGeneration;
     const controller = new AbortController();
     pipelineAbortController = controller;
     assistantSpeaking = false;
 
-    conversationHistory.push({ role: "user", content: text });
+    conversationHistory.push({ role: 'user', content: text });
     while (conversationHistory.length > MAX_HISTORY) conversationHistory.shift();
     saveHistory(key, conversationHistory);
 
+    if (mongodbUri) {
+      getDb()
+        .then((db) => {
+          appendTranscript(db, sessionId, { role: 'user', content: text, timestamp: new Date() });
+          updateCallMetrics(db, sessionId, { turnCount: 1 });
+        })
+        .catch(() => {});
+    }
+
     const startTime = Date.now();
-    logger.info("Pipeline started", { gen, text: text.slice(0, 50), historyLen: conversationHistory.length });
+    logger.info('Pipeline started', { gen, text: text.slice(0, 50) });
 
     pipeline
       .run(
@@ -99,18 +160,19 @@ export function runVoiceSession(
         {
           onTranscript: (reply) => {
             if (controller.signal.aborted) return;
-            conversationHistory.push({ role: "assistant", content: reply });
+            conversationHistory.push({ role: 'assistant', content: reply });
             saveHistory(key, conversationHistory);
-            logger.info("Pipeline transcript", { reply: reply.slice(0, 80) });
-            channel.sendTranscript(reply, true, "assistant");
-            if (mongodbUri && clientId) {
+            channel.sendTranscript(reply, true, 'assistant');
+            if (mongodbUri) {
               getDb()
-                .then((db) =>
-                  incrementUsage(db, clientId, {
-                    ttsChars: reply.length,
-                    llmTokens: Math.ceil(reply.length / 4),
-                  })
-                )
+                .then((db) => {
+                  appendTranscript(db, sessionId, {
+                    role: 'assistant',
+                    content: reply,
+                    timestamp: new Date(),
+                  });
+                  updateCallMetrics(db, sessionId, { ttsChars: reply.length });
+                })
                 .catch(() => {});
             }
           },
@@ -123,28 +185,43 @@ export function runVoiceSession(
             if (controller.signal.aborted) return;
             channel.sendAudioComplete?.();
           },
+          onTTFB: (ms) => {
+            if (mongodbUri) {
+              getDb()
+                .then((db) => updateCallMetrics(db, sessionId, { ttfbMs: ms }))
+                .catch(() => {});
+            }
+          },
+          onTokens: (count) => {
+            if (mongodbUri) {
+              getDb()
+                .then((db) => updateCallMetrics(db, sessionId, { totalTokens: count }))
+                .catch(() => {});
+            }
+          },
         },
         controller.signal,
-        conversationHistory.slice(0, -1)
+        conversationHistory.slice(0, -1),
+        agent?.persona,
+        agent?.llm?.maxTokens ? agent.llm.maxTokens * 10 : 4096,
       )
       .catch((err: unknown) => {
-        if (err instanceof Error && err.name === "AbortError") return;
+        if (err instanceof Error && err.name === 'AbortError') return;
         if (controller.signal.aborted) return;
         conversationHistory.pop();
-        logger.error("Pipeline error", err);
-        channel.sendError("Assistant error");
+        logger.error('Pipeline error', err);
+        channel.sendError('Assistant error');
       })
       .finally(() => {
         const elapsed = Date.now() - startTime;
-        logger.info("Pipeline finished", { gen, elapsed, aborted: controller.signal.aborted });
+        logger.info('Pipeline finished', { gen, elapsed, aborted: controller.signal.aborted });
         if (pipelineGeneration === gen) {
           pipelineAbortController = null;
           setTimeout(() => {
             if (pipelineGeneration === gen) {
               assistantSpeaking = false;
-              logger.info("STT re-enabled after playback");
             }
-          }, ECHO_SUPPRESSION_MS);
+          }, echoMs);
         }
       });
   };
@@ -163,31 +240,31 @@ export function runVoiceSession(
 
   const triggerPipeline = (text: string): void => {
     clearDebounce();
-    if (text.trim()) {
-      logger.info("Triggering pipeline", { text: text.slice(0, 50) });
-      runPipeline(text.trim());
-    }
+    if (text.trim()) runPipeline(text.trim());
   };
 
+  const endpointingMs = thresholds.endpointingMs || 200;
   const sttOptions = config.audioFormat
-    ? { encoding: config.audioFormat.encoding, sampleRate: config.audioFormat.sampleRate }
-    : { encoding: "linear16" as const, sampleRate: 16000 };
+    ? {
+        encoding: config.audioFormat.encoding,
+        sampleRate: config.audioFormat.sampleRate,
+        endpointingMs,
+      }
+    : { encoding: 'linear16' as const, sampleRate: 16000, endpointingMs };
   const provider = createDeepgramProvider(deepgramApiKey, sttOptions);
 
   provider
     .startSession(
       (result) => {
         if (assistantSpeaking) {
-          if (result.speechFinal && result.text.trim().length > 2) {
-            logger.info("User interrupted", { text: result.text.slice(0, 50) });
+          if (result.speechFinal && result.text.trim().length > minInterruptLen) {
+            logger.info('User interrupted', { text: result.text.slice(0, 50) });
             interrupt();
             triggerPipeline(result.text);
           }
           return;
         }
-
-        channel.sendTranscript(result.text, result.isFinal, "user");
-
+        channel.sendTranscript(result.text, result.isFinal, 'user');
         if (result.speechFinal) {
           triggerPipeline(result.text);
         } else if (result.isFinal && result.text.trim()) {
@@ -196,7 +273,6 @@ export function runVoiceSession(
           debounceTimer = setTimeout(() => {
             debounceTimer = null;
             if (pendingFinalText) {
-              logger.info("Fallback debounce triggered", { text: pendingFinalText.slice(0, 50) });
               triggerPipeline(pendingFinalText);
               pendingFinalText = null;
             }
@@ -205,17 +281,17 @@ export function runVoiceSession(
       },
       () => {
         if (assistantSpeaking) {
-          logger.info("VAD speech detected during playback, preparing interrupt");
+          logger.info('VAD speech detected during playback');
         }
-      }
+      },
     )
     .then((session) => {
       sttSession = session;
-      logger.info("STT session started");
+      logger.info('STT session started', { sessionId });
     })
     .catch((err: unknown) => {
-      logger.error("Failed to start STT session", err);
-      channel.sendError("Failed to start speech recognition");
+      logger.error('Failed to start STT session', err);
+      channel.sendError('Failed to start speech recognition');
       channel.close();
     });
 
@@ -227,14 +303,16 @@ export function runVoiceSession(
     clearDebounce();
     interrupt();
     sttSession?.close();
-    if (mongodbUri) {
-      getDb().then((db) => endSession(db, sessionId)).catch(() => {});
-      if (clientId) {
-        getDb()
-          .then((db) => incrementUsage(db, clientId, { sessions: 1 }))
-          .catch(() => {});
-      }
+    if (callDurationTimer) {
+      clearTimeout(callDurationTimer);
+      callDurationTimer = null;
     }
-    logger.info("Voice session closed", { sessionId });
+
+    const elapsed = Math.round((Date.now() - callStartTime) / 1000);
+    logger.info('Voice session closed', { sessionId, durationSec: elapsed });
+
+    if (mongodbUri) {
+      finalizeCall(sessionId, llm).catch((err) => logger.error('Summary generation failed', err));
+    }
   });
 }

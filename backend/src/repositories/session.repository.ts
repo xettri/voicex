@@ -1,4 +1,4 @@
-import type { Db } from "mongodb";
+import type { Db } from 'mongodb';
 
 export interface SessionDoc {
   sessionId: string;
@@ -9,7 +9,7 @@ export interface SessionDoc {
 }
 
 export async function createSession(db: Db, sessionId: string, clientId?: string): Promise<void> {
-  await db.collection<SessionDoc>("sessions").insertOne({
+  await db.collection<SessionDoc>('sessions').insertOne({
     sessionId,
     clientId,
     createdAt: new Date(),
@@ -18,8 +18,7 @@ export async function createSession(db: Db, sessionId: string, clientId?: string
 }
 
 export async function endSession(db: Db, sessionId: string): Promise<void> {
-  await db.collection<SessionDoc>("sessions").updateOne(
-    { sessionId },
-    { $set: { endedAt: new Date() } }
-  );
+  await db
+    .collection<SessionDoc>('sessions')
+    .updateOne({ sessionId }, { $set: { endedAt: new Date() } });
 }

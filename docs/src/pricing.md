@@ -6,26 +6,26 @@ Cost breakdown for each provider and optimization strategies.
 
 ### STT (Speech-to-Text)
 
-| Provider | Cost | Free Tier | Notes |
-|----------|------|-----------|-------|
+| Provider     | Cost        | Free Tier              | Notes    |
+| ------------ | ----------- | ---------------------- | -------- |
 | **Deepgram** | $0.0058/min | $200 credit (~34K min) | Required |
 
 ### LLM (Language Model)
 
-| Provider | Cost | Free Tier | Model |
-|----------|------|-----------|-------|
-| **Ollama** | Free (self-hosted) | Unlimited | llama3.2:3b |
-| **Groq** | ~$0.05-0.08/M tokens | Free tier available | llama-3.1-8b-instant |
-| **OpenAI** | ~$0.15-0.60/M tokens | — | gpt-4o-mini |
+| Provider   | Cost                 | Free Tier           | Model                |
+| ---------- | -------------------- | ------------------- | -------------------- |
+| **Ollama** | Free (self-hosted)   | Unlimited           | llama3.2:3b          |
+| **Groq**   | ~$0.05-0.08/M tokens | Free tier available | llama-3.1-8b-instant |
+| **OpenAI** | ~$0.15-0.60/M tokens | —                   | gpt-4o-mini          |
 
 ### TTS (Text-to-Speech)
 
-| Provider | Cost | Free Tier | Quality | Production? |
-|----------|------|-----------|---------|-------------|
-| **ElevenLabs** | ~$0.30/1K chars | 10K chars/month | Best (most natural) | Yes |
-| **OpenAI** | $15/1M chars | — | Good | Yes |
-| **Edge TTS** | Free | Unlimited | Decent | No — dev only |
-| **System** | Free (local) | Unlimited | Basic | No |
+| Provider       | Cost            | Free Tier       | Quality             | Production?   |
+| -------------- | --------------- | --------------- | ------------------- | ------------- |
+| **ElevenLabs** | ~$0.30/1K chars | 10K chars/month | Best (most natural) | Yes           |
+| **OpenAI**     | $15/1M chars    | —               | Good                | Yes           |
+| **Edge TTS**   | Free            | Unlimited       | Decent              | No — dev only |
+| **System**     | Free (local)    | Unlimited       | Basic               | No            |
 
 ::: warning
 Edge TTS is free but uses an unofficial Microsoft endpoint with no SLA, no uptime guarantee, and no rate limit documentation. **Do not use in production.** It can be throttled or discontinued at any time.

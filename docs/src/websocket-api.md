@@ -10,18 +10,18 @@ ws://localhost:3001/ws/voice
 
 ### Query Parameters
 
-| Param | Required | Description |
-|-------|----------|-------------|
-| `api_key` | No* | API key for authentication |
-| `token` | No* | JWT token for authentication |
-| `session_id` | No | Resume a previous conversation session |
+| Param        | Required | Description                            |
+| ------------ | -------- | -------------------------------------- |
+| `api_key`    | No\*     | API key for authentication             |
+| `token`      | No\*     | JWT token for authentication           |
+| `session_id` | No       | Resume a previous conversation session |
 
-*Required if `API_KEYS` is configured on the server.
+\*Required if `API_KEYS` is configured on the server.
 
 ### Example
 
 ```javascript
-const ws = new WebSocket("ws://localhost:3001/ws/voice?api_key=your_key&session_id=abc123");
+const ws = new WebSocket('ws://localhost:3001/ws/voice?api_key=your_key&session_id=abc123');
 ```
 
 ---
@@ -59,12 +59,12 @@ Real-time transcription of user or assistant speech.
 }
 ```
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `text` | string | Transcribed text |
-| `isFinal` | boolean | `true` = finalized, `false` = interim (may change) |
-| `role` | `"user"` \| `"assistant"` | Who said it |
-| `timestamp` | number | Unix timestamp in ms |
+| Field       | Type                      | Description                                        |
+| ----------- | ------------------------- | -------------------------------------------------- |
+| `text`      | string                    | Transcribed text                                   |
+| `isFinal`   | boolean                   | `true` = finalized, `false` = interim (may change) |
+| `role`      | `"user"` \| `"assistant"` | Who said it                                        |
+| `timestamp` | number                    | Unix timestamp in ms                               |
 
 ### `audio`
 
@@ -142,27 +142,27 @@ Keep-alive ping.
 
 ```javascript
 // Connect
-const ws = new WebSocket("ws://localhost:3001/ws/voice");
+const ws = new WebSocket('ws://localhost:3001/ws/voice');
 
 ws.onmessage = (event) => {
   const msg = JSON.parse(event.data);
 
   switch (msg.type) {
-    case "connected":
-      console.log("Connected:", msg.sessionId);
+    case 'connected':
+      console.log('Connected:', msg.sessionId);
       // Save for reconnection
-      localStorage.setItem("session_id", msg.historyKey);
+      localStorage.setItem('session_id', msg.historyKey);
       break;
 
-    case "transcript":
+    case 'transcript':
       const { text, isFinal, role } = msg.payload;
-      console.log(`[${role}] ${text}${isFinal ? "" : "..."}`);
+      console.log(`[${role}] ${text}${isFinal ? '' : '...'}`);
       break;
 
-    case "audio":
+    case 'audio':
       // Decode and play MP3
-      const bytes = Uint8Array.from(atob(msg.payload), c => c.charCodeAt(0));
-      audioContext.decodeAudioData(bytes.buffer).then(buffer => {
+      const bytes = Uint8Array.from(atob(msg.payload), (c) => c.charCodeAt(0));
+      audioContext.decodeAudioData(bytes.buffer).then((buffer) => {
         const source = audioContext.createBufferSource();
         source.buffer = buffer;
         source.connect(audioContext.destination);
@@ -170,13 +170,13 @@ ws.onmessage = (event) => {
       });
       break;
 
-    case "audioStop":
+    case 'audioStop':
       // Stop any playing audio immediately
       currentSource?.stop();
       break;
 
-    case "error":
-      console.error("Error:", msg.payload.message);
+    case 'error':
+      console.error('Error:', msg.payload.message);
       break;
   }
 };
@@ -185,7 +185,7 @@ ws.onmessage = (event) => {
 function sendAudio(pcmArrayBuffer) {
   const bytes = new Uint8Array(pcmArrayBuffer);
   const base64 = btoa(String.fromCharCode(...bytes));
-  ws.send(JSON.stringify({ type: "audio", payload: base64 }));
+  ws.send(JSON.stringify({ type: 'audio', payload: base64 }));
 }
 ```
 
@@ -193,9 +193,9 @@ function sendAudio(pcmArrayBuffer) {
 
 ## Audio Format
 
-| Direction | Format | Sample Rate | Encoding |
-|-----------|--------|-------------|----------|
-| Client → Server | PCM 16-bit | 16kHz | Linear16, base64 |
-| Server → Client | MP3 | 24kHz | Complete MP3 file, base64 |
+| Direction       | Format     | Sample Rate | Encoding                  |
+| --------------- | ---------- | ----------- | ------------------------- |
+| Client → Server | PCM 16-bit | 16kHz       | Linear16, base64          |
+| Server → Client | MP3        | 24kHz       | Complete MP3 file, base64 |
 
 The server sends one complete MP3 file per sentence. Use `decodeAudioData()` to decode.

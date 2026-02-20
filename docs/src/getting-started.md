@@ -59,11 +59,11 @@ pnpm dev
 
 This starts both:
 
-| Service | URL |
-|---------|-----|
-| Frontend | [http://localhost:3000](http://localhost:3000) |
-| Backend | [http://localhost:3001](http://localhost:3001) |
-| WebSocket | `ws://localhost:3001/ws/voice` |
+| Service      | URL                                                                  |
+| ------------ | -------------------------------------------------------------------- |
+| Frontend     | [http://localhost:3000](http://localhost:3000)                       |
+| Backend      | [http://localhost:3001](http://localhost:3001)                       |
+| WebSocket    | `ws://localhost:3001/ws/voice`                                       |
 | Health Check | [http://localhost:3001/api/health](http://localhost:3001/api/health) |
 
 ## 4. Use

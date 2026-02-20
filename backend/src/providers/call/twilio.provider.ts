@@ -1,38 +1,47 @@
-import type { WebSocket } from "ws";
-import { createLogger } from "../../shared/logger.js";
-import { createStreamingMulawConverter, type StreamingMulawConverter } from "../../shared/mp3-to-mulaw.js";
-import type { CallChannel } from "./call.interface.js";
+import type { WebSocket } from 'ws';
+import { createLogger } from '../../shared/logger.js';
+import {
+  createStreamingMulawConverter,
+  type StreamingMulawConverter,
+} from '../../shared/mp3-to-mulaw.js';
+import type { CallChannel } from './call.interface.js';
 
-const logger = createLogger("TwilioProvider");
+const logger = createLogger('TwilioProvider');
 const MULAW_CHUNK_SIZE = 640;
 
 interface TwilioMediaMessage {
-  event: "media";
+  event: 'media';
   media: { payload: string; track?: string };
   streamSid: string;
 }
 
 interface TwilioStartMessage {
-  event: "start";
+  event: 'start';
   start: { streamSid: string; mediaFormat?: { encoding: string; sampleRate: number } };
   streamSid: string;
 }
 
 interface TwilioStopMessage {
-  event: "stop";
+  event: 'stop';
   streamSid: string;
 }
 
-function parseTwilioMessage(data: string): TwilioMediaMessage | TwilioStartMessage | TwilioStopMessage | null {
+function parseTwilioMessage(
+  data: string,
+): TwilioMediaMessage | TwilioStartMessage | TwilioStopMessage | null {
   try {
     const msg = JSON.parse(data) as Record<string, unknown>;
-    if (msg.event === "media" && msg.media && typeof (msg.media as Record<string, unknown>).payload === "string") {
+    if (
+      msg.event === 'media' &&
+      msg.media &&
+      typeof (msg.media as Record<string, unknown>).payload === 'string'
+    ) {
       return msg as unknown as TwilioMediaMessage;
     }
-    if (msg.event === "start" && msg.streamSid) {
+    if (msg.event === 'start' && msg.streamSid) {
       return msg as unknown as TwilioStartMessage;
     }
-    if (msg.event === "stop" && msg.streamSid) {
+    if (msg.event === 'stop' && msg.streamSid) {
       return msg as unknown as TwilioStopMessage;
     }
     return null;
@@ -52,7 +61,7 @@ export function createTwilioCallChannel(ws: WebSocket): CallChannel {
   const sendMedia = (payloadBase64: string): void => {
     if (closed || !streamSid) return;
     try {
-      ws.send(JSON.stringify({ event: "media", streamSid, media: { payload: payloadBase64 } }));
+      ws.send(JSON.stringify({ event: 'media', streamSid, media: { payload: payloadBase64 } }));
     } catch {
       /* ignore */
     }
@@ -62,7 +71,7 @@ export function createTwilioCallChannel(ws: WebSocket): CallChannel {
     if (closed || !streamSid) return;
     markCounter++;
     try {
-      ws.send(JSON.stringify({ event: "mark", streamSid, mark: { name: `sent-${markCounter}` } }));
+      ws.send(JSON.stringify({ event: 'mark', streamSid, mark: { name: `sent-${markCounter}` } }));
     } catch {
       /* ignore */
     }
@@ -82,7 +91,7 @@ export function createTwilioCallChannel(ws: WebSocket): CallChannel {
       (mulawChunk) => {
         for (let i = 0; i < mulawChunk.length; i += MULAW_CHUNK_SIZE) {
           const slice = mulawChunk.subarray(i, Math.min(i + MULAW_CHUNK_SIZE, mulawChunk.length));
-          sendMedia(slice.toString("base64"));
+          sendMedia(slice.toString('base64'));
         }
       },
       () => {
@@ -90,31 +99,33 @@ export function createTwilioCallChannel(ws: WebSocket): CallChannel {
         converter = null;
       },
       (err) => {
-        logger.error("Streaming mulaw conversion error", err);
+        logger.error('Streaming mulaw conversion error', err);
         converter = null;
-      }
+      },
     );
 
     return converter;
   };
 
-  ws.on("message", (data: Buffer) => {
+  ws.on('message', (data: Buffer) => {
     const msg = parseTwilioMessage(data.toString());
     if (!msg) return;
 
-    if (msg.event === "start") {
+    if (msg.event === 'start') {
       streamSid = msg.streamSid;
-      logger.info("Twilio stream started", { streamSid });
+      logger.info('Twilio stream started', { streamSid });
       return;
     }
 
-    if (msg.event === "media" && msg.media.track === "inbound") {
-      const payload = Buffer.from(msg.media.payload, "base64");
-      onAudioCb?.(payload.buffer.slice(payload.byteOffset, payload.byteOffset + payload.byteLength));
+    if (msg.event === 'media' && msg.media.track === 'inbound') {
+      const payload = Buffer.from(msg.media.payload, 'base64');
+      onAudioCb?.(
+        payload.buffer.slice(payload.byteOffset, payload.byteOffset + payload.byteLength),
+      );
       return;
     }
 
-    if (msg.event === "stop") {
+    if (msg.event === 'stop') {
       handleClose();
     }
   });
@@ -126,8 +137,8 @@ export function createTwilioCallChannel(ws: WebSocket): CallChannel {
     onCloseCb?.();
   };
 
-  ws.on("close", handleClose);
-  ws.on("error", () => handleClose());
+  ws.on('close', handleClose);
+  ws.on('error', () => handleClose());
 
   return {
     sendAudio(chunk: ArrayBuffer) {
@@ -143,15 +154,17 @@ export function createTwilioCallChannel(ws: WebSocket): CallChannel {
       destroyConverter();
       if (streamSid && !closed) {
         try {
-          ws.send(JSON.stringify({ event: "clear", streamSid }));
-        } catch { /* ignore */ }
+          ws.send(JSON.stringify({ event: 'clear', streamSid }));
+        } catch {
+          /* ignore */
+        }
       }
     },
     sendTranscript(_text, _isFinal, _role?) {
       /* Twilio doesn't support transcript in stream */
     },
     sendError(message) {
-      logger.info("Twilio error", { message });
+      logger.info('Twilio error', { message });
     },
     onAudio(cb) {
       onAudioCb = cb;

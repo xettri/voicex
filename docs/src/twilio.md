@@ -37,10 +37,12 @@ API_KEYS=sk_live_abc123
 
 ::: warning
 For production, `TWILIO_APP_URL` must be an HTTPS URL accessible from the internet. Use ngrok for local testing:
+
 ```bash
 ngrok http 3001
 # Then set TWILIO_APP_URL=https://abc123.ngrok.io
 ```
+
 :::
 
 ## Twilio Console Setup
@@ -55,22 +57,26 @@ ngrok http 3001
 ## Audio Format
 
 Twilio Media Streams use **mulaw encoding at 8kHz**. The backend automatically:
+
 - Converts incoming mulaw to the format Deepgram expects
 - Converts outgoing MP3 (from TTS) to mulaw for Twilio playback
 
 ## Testing Locally
 
 1. Install [ngrok](https://ngrok.com/):
+
    ```bash
    ngrok http 3001
    ```
 
 2. Set the ngrok URL:
+
    ```bash
    TWILIO_APP_URL=https://abc123.ngrok.io
    ```
 
 3. Update Twilio webhook URL to use the ngrok URL:
+
    ```
    https://abc123.ngrok.io/api/twilio/voice?api_key=sk_live_abc123
    ```

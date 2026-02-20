@@ -182,12 +182,12 @@ CMD ["node", "dist/index.js"]
 ### Docker Compose (full stack)
 
 ```yaml
-version: "3.9"
+version: '3.9'
 services:
   backend:
     build: .
     ports:
-      - "3001:3001"
+      - '3001:3001'
     env_file: .env
     depends_on:
       - redis
@@ -197,7 +197,7 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      - '6379:6379'
     volumes:
       - redis_data:/data
     restart: unless-stopped
@@ -205,7 +205,7 @@ services:
   mongo:
     image: mongo:7
     ports:
-      - "27017:27017"
+      - '27017:27017'
     volumes:
       - mongo_data:/data/db
     environment:
@@ -253,12 +253,12 @@ flowchart TD
 
 ### Requirements for Horizontal Scaling
 
-| Requirement | Why | Config |
-|-------------|-----|--------|
-| **Sticky sessions** | WebSocket connections must stay on the same instance | Nginx `ip_hash` or ALB cookie |
-| **Redis** | Rate limits and conversation history shared across instances | Set `REDIS_URL` |
-| **MongoDB** | Usage tracking and billing shared across instances | Set `MONGODB_URI` |
-| **Health checks** | Load balancer needs to detect unhealthy instances | `GET /api/health` |
+| Requirement         | Why                                                          | Config                        |
+| ------------------- | ------------------------------------------------------------ | ----------------------------- |
+| **Sticky sessions** | WebSocket connections must stay on the same instance         | Nginx `ip_hash` or ALB cookie |
+| **Redis**           | Rate limits and conversation history shared across instances | Set `REDIS_URL`               |
+| **MongoDB**         | Usage tracking and billing shared across instances           | Set `MONGODB_URI`             |
+| **Health checks**   | Load balancer needs to detect unhealthy instances            | `GET /api/health`             |
 
 ### Nginx Configuration
 

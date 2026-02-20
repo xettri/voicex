@@ -1,6 +1,6 @@
-export type HistoryMessage = { role: "user" | "assistant"; content: string };
+export type HistoryMessage = { role: 'user' | 'assistant'; content: string };
 
-const KEY_PREFIX = "voice:history:";
+const KEY_PREFIX = 'voice:history:';
 const MAX_MESSAGES = 20;
 
 const inMemoryStore = new Map<string, HistoryMessage[]>();
@@ -12,14 +12,14 @@ let redisClient: {
 
 /** Initialize Redis for conversation history. Call at startup if REDIS_URL is set. */
 export async function initConversationHistoryRedis(url: string): Promise<void> {
-  const { createClient } = await import("redis");
+  const { createClient } = await import('redis');
   const client = createClient({ url }) as unknown as {
     get: (k: string) => Promise<string | null>;
     set: (k: string, v: string, opts?: { EX?: number }) => Promise<string>;
     on: (e: string, cb: (err: Error) => void) => void;
     connect: () => Promise<void>;
   };
-  client.on("error", (err: Error) => console.error("Redis conversation history error:", err));
+  client.on('error', (err: Error) => console.error('Redis conversation history error:', err));
   await client.connect();
   redisClient = client;
 }
@@ -38,10 +38,10 @@ export async function getHistory(sessionKey: string): Promise<HistoryMessage[]> 
       if (!Array.isArray(parsed)) return [];
       return parsed.filter(
         (m): m is HistoryMessage =>
-          typeof m === "object" &&
+          typeof m === 'object' &&
           m !== null &&
-          (m.role === "user" || m.role === "assistant") &&
-          typeof m.content === "string"
+          (m.role === 'user' || m.role === 'assistant') &&
+          typeof m.content === 'string',
       );
     } catch {
       return [];

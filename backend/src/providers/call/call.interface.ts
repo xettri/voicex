@@ -5,7 +5,7 @@ export interface CallChannel {
   sendAudioComplete?(): void;
   /** Called when pipeline is aborted (user spoke) – client should stop playback immediately. */
   sendAudioStop?(): void;
-  sendTranscript(text: string, isFinal: boolean, role?: "user" | "assistant"): void;
+  sendTranscript(text: string, isFinal: boolean, role?: 'user' | 'assistant'): void;
   sendError(message: string): void;
   onAudio(cb: (chunk: ArrayBuffer) => void): void;
   onClose(cb: () => void): void;

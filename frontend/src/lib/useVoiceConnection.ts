@@ -1,28 +1,28 @@
-"use client";
+'use client';
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { parseServerMessage } from "./ws-types";
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { parseServerMessage } from './ws-types';
 
 function getWsUrl(): string {
-  const base = process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:3001/ws/voice";
+  const base = process.env.NEXT_PUBLIC_WS_URL ?? 'ws://localhost:3001/ws/voice';
   const params = new URLSearchParams();
   const apiKey = process.env.NEXT_PUBLIC_API_KEY;
-  if (apiKey) params.set("api_key", apiKey);
-  if (typeof window !== "undefined") {
-    const sid = localStorage.getItem("voicex_session_id");
-    if (sid) params.set("session_id", sid);
+  if (apiKey) params.set('api_key', apiKey);
+  if (typeof window !== 'undefined') {
+    const sid = localStorage.getItem('voicex_session_id');
+    if (sid) params.set('session_id', sid);
   }
   const qs = params.toString();
-  return qs ? `${base}${base.includes("?") ? "&" : "?"}${qs}` : base;
+  return qs ? `${base}${base.includes('?') ? '&' : '?'}${qs}` : base;
 }
 
-export type ConnectionStatus = "disconnected" | "connecting" | "connected";
+export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected';
 
 export interface TranscriptMessage {
   text: string;
   isFinal: boolean;
   timestamp: number;
-  role?: "user" | "assistant";
+  role?: 'user' | 'assistant';
 }
 
 const MAX_TRANSCRIPT = 100;
@@ -41,7 +41,7 @@ export function useVoiceConnection(options?: {
   disconnect: () => void;
   sendAudio: (chunk: ArrayBuffer) => void;
 } {
-  const [status, setStatus] = useState<ConnectionStatus>("disconnected");
+  const [status, setStatus] = useState<ConnectionStatus>('disconnected');
   const [transcript, setTranscript] = useState<TranscriptMessage[]>([]);
   const wsRef = useRef<WebSocket | null>(null);
   const onAudioChunkRef = useRef(options?.onAudioChunk);
@@ -67,10 +67,10 @@ export function useVoiceConnection(options?: {
   const connectWs = useCallback((): void => {
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
 
-    setStatus("connecting");
+    setStatus('connecting');
     const url = getWsUrl();
     const ws = new WebSocket(url);
-    ws.binaryType = "arraybuffer";
+    ws.binaryType = 'arraybuffer';
 
     ws.onopen = (): void => {
       reconnectAttemptsRef.current = 0;
@@ -85,31 +85,34 @@ export function useVoiceConnection(options?: {
       const msg = parseServerMessage(event.data as string);
       if (!msg) return;
 
-      if (msg.type === "connected") {
+      if (msg.type === 'connected') {
         wsRef.current = ws;
-        setStatus("connected");
-        if (typeof window !== "undefined" && msg.historyKey) {
-          localStorage.setItem("voicex_session_id", msg.historyKey);
+        setStatus('connected');
+        if (typeof window !== 'undefined' && msg.historyKey) {
+          localStorage.setItem('voicex_session_id', msg.historyKey);
         }
-      } else if (msg.type === "transcript") {
+      } else if (msg.type === 'transcript') {
         setTranscript((prev) => {
           const next = [...prev, msg.payload];
           return next.length > MAX_TRANSCRIPT ? next.slice(-MAX_TRANSCRIPT) : next;
         });
-      } else if (msg.type === "audioEnd") {
+      } else if (msg.type === 'audioEnd') {
         onAudioEndRef.current?.();
-      } else if (msg.type === "audioStop") {
+      } else if (msg.type === 'audioStop') {
         onAudioStopRef.current?.();
-      } else if (msg.type === "error") {
+      } else if (msg.type === 'error') {
         onErrorRef.current?.(msg.payload.message);
       }
     };
 
     ws.onclose = (): void => {
       wsRef.current = null;
-      setStatus("disconnected");
+      setStatus('disconnected');
 
-      if (!intentionalDisconnectRef.current && reconnectAttemptsRef.current < MAX_RECONNECT_ATTEMPTS) {
+      if (
+        !intentionalDisconnectRef.current &&
+        reconnectAttemptsRef.current < MAX_RECONNECT_ATTEMPTS
+      ) {
         reconnectAttemptsRef.current++;
         const delay = RECONNECT_DELAY_MS * reconnectAttemptsRef.current;
         reconnectTimerRef.current = setTimeout(() => {
@@ -135,7 +138,7 @@ export function useVoiceConnection(options?: {
     clearReconnectTimer();
     wsRef.current?.close();
     wsRef.current = null;
-    setStatus("disconnected");
+    setStatus('disconnected');
     setTranscript([]);
   }, [clearReconnectTimer]);
 

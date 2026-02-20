@@ -1,6 +1,6 @@
-"use client";
+'use client';
 
-import type { TranscriptMessage } from "@/lib/useVoiceConnection";
+import type { TranscriptMessage } from '@/lib/useVoiceConnection';
 
 interface TranscriptDisplayProps {
   messages: TranscriptMessage[];
@@ -9,9 +9,7 @@ interface TranscriptDisplayProps {
 export function TranscriptDisplay({ messages }: TranscriptDisplayProps) {
   if (messages.length === 0) {
     return (
-      <p className="text-gray-500 text-sm text-center py-8">
-        Speak to see transcript here...
-      </p>
+      <p className="text-gray-500 text-sm text-center py-8">Speak to see transcript here...</p>
     );
   }
 
@@ -21,11 +19,11 @@ export function TranscriptDisplay({ messages }: TranscriptDisplayProps) {
         <p
           key={i}
           className={`text-sm ${
-            m.role === "assistant"
-              ? "text-blue-700 font-medium"
+            m.role === 'assistant'
+              ? 'text-blue-700 font-medium'
               : m.isFinal
-                ? "text-gray-900 font-medium"
-                : "text-gray-500 italic"
+                ? 'text-gray-900 font-medium'
+                : 'text-gray-500 italic'
           }`}
         >
           {m.text}

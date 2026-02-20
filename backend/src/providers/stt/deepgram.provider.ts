@@ -1,25 +1,27 @@
-import { createClient, LiveTranscriptionEvents } from "@deepgram/sdk";
-import { createLogger } from "../../shared/logger.js";
-import type { STTProvider } from "./stt.interface.js";
+import { createClient, LiveTranscriptionEvents } from '@deepgram/sdk';
+import { createLogger } from '../../shared/logger.js';
+import type { STTProvider } from './stt.interface.js';
 
-const logger = createLogger("DeepgramSTT");
+const logger = createLogger('DeepgramSTT');
 
 export interface DeepgramOptions {
-  encoding?: "linear16" | "mulaw" | "alaw";
+  encoding?: 'linear16' | 'mulaw' | 'alaw';
   sampleRate?: number;
+  endpointingMs?: number;
 }
 
 export function createDeepgramProvider(apiKey: string, options?: DeepgramOptions): STTProvider {
   return {
     async startSession(onTranscript, onSpeechStart) {
       const deepgram = createClient(apiKey);
+      const ep = options?.endpointingMs ?? 200;
       const opts: Record<string, unknown> = {
-        model: "nova-2",
-        language: "en",
+        model: 'nova-2',
+        language: 'en',
         smart_format: true,
         interim_results: true,
-        endpointing: 200,
-        utterance_end_ms: 700,
+        endpointing: ep,
+        utterance_end_ms: Math.max(ep * 3, 600),
         vad_events: true,
         no_delay: true,
       };
@@ -28,14 +30,14 @@ export function createDeepgramProvider(apiKey: string, options?: DeepgramOptions
 
       const live = deepgram.listen.live(opts);
 
-      let finalizedText = "";
+      let finalizedText = '';
 
       live.on(LiveTranscriptionEvents.Open, () => {
-        logger.info("Deepgram connection opened");
+        logger.info('Deepgram connection opened');
       });
 
       live.on(LiveTranscriptionEvents.Close, () => {
-        logger.info("Deepgram connection closed");
+        logger.info('Deepgram connection closed');
       });
 
       live.on(LiveTranscriptionEvents.SpeechStarted, () => {
@@ -46,17 +48,17 @@ export function createDeepgramProvider(apiKey: string, options?: DeepgramOptions
         const transcript = data.channel?.alternatives?.[0];
         const isFinal = data.is_final ?? false;
         const speechFinal = data.speech_final ?? false;
-        const text = transcript?.transcript ?? "";
+        const text = transcript?.transcript ?? '';
 
         // Log all transcript events for debugging
         if (text) {
-          logger.info("Transcript", { text: text.slice(0, 60), isFinal, speechFinal });
+          logger.info('Transcript', { text: text.slice(0, 60), isFinal, speechFinal });
         }
 
         if (!text) return;
 
         if (isFinal) {
-          finalizedText += (finalizedText ? " " : "") + text;
+          finalizedText += (finalizedText ? ' ' : '') + text;
         }
 
         if (speechFinal && finalizedText.trim()) {
@@ -66,11 +68,9 @@ export function createDeepgramProvider(apiKey: string, options?: DeepgramOptions
             speechFinal: true,
             timestamp: Date.now(),
           });
-          finalizedText = "";
+          finalizedText = '';
         } else {
-          const displayText = isFinal
-            ? finalizedText
-            : (finalizedText + " " + text).trim();
+          const displayText = isFinal ? finalizedText : (finalizedText + ' ' + text).trim();
           onTranscript({
             text: displayText || text,
             isFinal,
@@ -82,19 +82,19 @@ export function createDeepgramProvider(apiKey: string, options?: DeepgramOptions
 
       live.on(LiveTranscriptionEvents.UtteranceEnd, () => {
         if (finalizedText.trim()) {
-          logger.info("UtteranceEnd", { text: finalizedText.trim().slice(0, 50) });
+          logger.info('UtteranceEnd', { text: finalizedText.trim().slice(0, 50) });
           onTranscript({
             text: finalizedText.trim(),
             isFinal: true,
             speechFinal: true,
             timestamp: Date.now(),
           });
-          finalizedText = "";
+          finalizedText = '';
         }
       });
 
       live.on(LiveTranscriptionEvents.Error, (err: unknown) => {
-        logger.error("Deepgram error", err);
+        logger.error('Deepgram error', err);
       });
 
       const keepAliveInterval = setInterval(() => {

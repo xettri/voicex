@@ -6,11 +6,12 @@ Voicex uses a pluggable provider architecture for STT, LLM, and TTS. Each layer 
 
 Only Deepgram is supported. It's required.
 
-| Provider | Model | Cost | Latency | Notes |
-|----------|-------|------|---------|-------|
-| **Deepgram** | Nova-2 | $0.0058/min | ~100ms | $200 free credit |
+| Provider     | Model  | Cost        | Latency | Notes            |
+| ------------ | ------ | ----------- | ------- | ---------------- |
+| **Deepgram** | Nova-2 | $0.0058/min | ~100ms  | $200 free credit |
 
 **Features enabled:**
+
 - `interim_results` — show partial transcriptions in real-time
 - `endpointing: 300` — detect 300ms silence as end-of-speech
 - `utterance_end_ms: 1000` — fallback end-of-utterance detection
@@ -29,11 +30,11 @@ Get your key at [console.deepgram.com](https://console.deepgram.com/).
 
 Three providers supported. Set `LLM_PROVIDER` to choose.
 
-| Provider | Model | Cost | First Token | Best For |
-|----------|-------|------|-------------|----------|
-| **Groq** | llama-3.1-8b-instant | Free tier / ~$0.05/M tokens | ~200ms | Production (fast + cheap) |
-| **OpenAI** | gpt-4o-mini | ~$0.15-0.60/M tokens | ~500ms | Premium quality |
-| **Ollama** | llama3.2:3b | Free (local) | 1-3s | Dev, privacy, offline |
+| Provider   | Model                | Cost                        | First Token | Best For                  |
+| ---------- | -------------------- | --------------------------- | ----------- | ------------------------- |
+| **Groq**   | llama-3.1-8b-instant | Free tier / ~$0.05/M tokens | ~200ms      | Production (fast + cheap) |
+| **OpenAI** | gpt-4o-mini          | ~$0.15-0.60/M tokens        | ~500ms      | Premium quality           |
+| **Ollama** | llama3.2:3b          | Free (local)                | 1-3s        | Dev, privacy, offline     |
 
 ### Groq (Recommended)
 
@@ -82,12 +83,12 @@ If the configured provider's key is missing, Voicex falls back: **OpenAI → Gro
 
 Four providers supported. Selected automatically by priority based on available keys.
 
-| Provider | Cost | Quality | Latency | Format |
-|----------|------|---------|---------|--------|
-| **ElevenLabs** | ~$0.30/1K chars | Best (most natural) | ~300ms | MP3 stream |
-| **OpenAI** | $15/1M chars | Good | ~400ms | MP3 stream |
-| **Edge TTS** | Free | Decent (Microsoft voices) | ~200ms | MP3 stream |
-| **System** | Free | Basic | ~500ms+ | WAV file |
+| Provider       | Cost            | Quality                   | Latency | Format     |
+| -------------- | --------------- | ------------------------- | ------- | ---------- |
+| **ElevenLabs** | ~$0.30/1K chars | Best (most natural)       | ~300ms  | MP3 stream |
+| **OpenAI**     | $15/1M chars    | Good                      | ~400ms  | MP3 stream |
+| **Edge TTS**   | Free            | Decent (Microsoft voices) | ~200ms  | MP3 stream |
+| **System**     | Free            | Basic                     | ~500ms+ | WAV file   |
 
 ### ElevenLabs (Best Quality)
 

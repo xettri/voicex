@@ -21,6 +21,7 @@ ws://localhost:3001/ws/voice?api_key=YOUR_API_KEY
 ```
 
 For Twilio webhook:
+
 ```
 http://localhost:3001/api/twilio/voice?api_key=YOUR_API_KEY
 ```
@@ -65,33 +66,31 @@ For in-app voice (web or mobile):
 
 ```javascript
 // 1. Get token
-const res = await fetch("http://localhost:3001/api/auth/token", {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({ api_key: "YOUR_API_KEY" }),
+const res = await fetch('http://localhost:3001/api/auth/token', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ api_key: 'YOUR_API_KEY' }),
 });
 const { token } = await res.json();
 
 // 2. Connect WebSocket
-const sessionId = localStorage.getItem("voicex_session_id") ?? crypto.randomUUID();
-const ws = new WebSocket(
-  `ws://localhost:3001/ws/voice?token=${token}&session_id=${sessionId}`
-);
+const sessionId = localStorage.getItem('voicex_session_id') ?? crypto.randomUUID();
+const ws = new WebSocket(`ws://localhost:3001/ws/voice?token=${token}&session_id=${sessionId}`);
 
 // 3. Handle messages
 ws.onmessage = (e) => {
   const msg = JSON.parse(e.data);
-  if (msg.type === "connected" && msg.historyKey) {
-    localStorage.setItem("voicex_session_id", msg.historyKey);
+  if (msg.type === 'connected' && msg.historyKey) {
+    localStorage.setItem('voicex_session_id', msg.historyKey);
   }
-  if (msg.type === "transcript") console.log(msg.payload.role, msg.payload.text);
-  if (msg.type === "audio") playAudio(msg.payload);
-  if (msg.type === "audioStop") stopAudio();
-  if (msg.type === "error") console.error(msg.payload.message);
+  if (msg.type === 'transcript') console.log(msg.payload.role, msg.payload.text);
+  if (msg.type === 'audio') playAudio(msg.payload);
+  if (msg.type === 'audioStop') stopAudio();
+  if (msg.type === 'error') console.error(msg.payload.message);
 };
 
 // 4. Send microphone audio (base64 PCM 16kHz)
-ws.send(JSON.stringify({ type: "audio", payload: base64Chunk }));
+ws.send(JSON.stringify({ type: 'audio', payload: base64Chunk }));
 ```
 
 See [WebSocket API](./websocket-api) for full protocol details.
@@ -125,12 +124,12 @@ In [Twilio Console](https://console.twilio.com) → Phone Numbers → Voice Conf
 
 ## API Reference
 
-| Endpoint | Method | Auth | Description |
-|----------|--------|------|-------------|
-| `/api/health` | GET | None | Health check |
-| `/api/auth/token` | POST | api_key (body or Bearer) | Get JWT token |
-| `/api/twilio/voice` | POST | api_key or token (query) | Twilio webhook |
-| `/ws/voice` | WebSocket | api_key or token (query) | Browser voice |
+| Endpoint            | Method    | Auth                     | Description          |
+| ------------------- | --------- | ------------------------ | -------------------- |
+| `/api/health`       | GET       | None                     | Health check         |
+| `/api/auth/token`   | POST      | api_key (body or Bearer) | Get JWT token        |
+| `/api/twilio/voice` | POST      | api_key or token (query) | Twilio webhook       |
+| `/ws/voice`         | WebSocket | api_key or token (query) | Browser voice        |
 | `/ws/twilio/stream` | WebSocket | api_key or token (query) | Twilio Media Streams |
 
 ---

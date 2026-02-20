@@ -1,6 +1,6 @@
-"use client";
+'use client';
 
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from 'react';
 
 interface AudioCaptureProps {
   onAudioChunk: (chunk: ArrayBuffer) => void;
@@ -49,12 +49,12 @@ export function AudioCapture({ onAudioChunk, enabled }: AudioCaptureProps) {
           }
           registerProcessor('pcm-processor', PCMProcessor);
         `;
-        const blob = new Blob([workletCode], { type: "application/javascript" });
+        const blob = new Blob([workletCode], { type: 'application/javascript' });
         const url = URL.createObjectURL(blob);
         await audioContext.audioWorklet.addModule(url);
         URL.revokeObjectURL(url);
 
-        const workletNode = new AudioWorkletNode(audioContext, "pcm-processor");
+        const workletNode = new AudioWorkletNode(audioContext, 'pcm-processor');
         workletNode.port.onmessage = (e: MessageEvent<ArrayBuffer>) => {
           onAudioChunk(e.data);
         };
@@ -77,7 +77,7 @@ export function AudioCapture({ onAudioChunk, enabled }: AudioCaptureProps) {
         processorRef.current = processor;
       }
     } catch (err) {
-      console.error("Failed to start capture:", err);
+      console.error('Failed to start capture:', err);
     }
   }, [onAudioChunk]);
 

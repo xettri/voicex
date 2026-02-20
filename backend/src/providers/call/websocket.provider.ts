@@ -1,6 +1,6 @@
-import type { WebSocket, RawData } from "ws";
-import { parseClientMessage } from "../../shared/ws-types.js";
-import type { CallChannel } from "./call.interface.js";
+import type { WebSocket, RawData } from 'ws';
+import { parseClientMessage } from '../../shared/ws-types.js';
+import type { CallChannel } from './call.interface.js';
 
 const STREAM_CHUNK_SIZE = 4096;
 
@@ -37,7 +37,7 @@ export function createWebSocketCallChannel(ws: WebSocket): CallChannel {
     sendBinary(combined);
   };
 
-  ws.on("message", (data: RawData, isBinary: boolean) => {
+  ws.on('message', (data: RawData, isBinary: boolean) => {
     if (isBinary) {
       const buf = Buffer.from(data as Buffer);
       const ab = new ArrayBuffer(buf.byteLength);
@@ -47,14 +47,14 @@ export function createWebSocketCallChannel(ws: WebSocket): CallChannel {
     }
     const msg = parseClientMessage(data.toString());
     if (!msg) {
-      sendJson({ type: "error", payload: { message: "Invalid message" } });
+      sendJson({ type: 'error', payload: { message: 'Invalid message' } });
       return;
     }
-    if (msg.type === "audio") {
+    if (msg.type === 'audio') {
       const binary = Uint8Array.from(atob(msg.payload), (c) => c.charCodeAt(0));
       onAudioCb?.(binary.buffer);
-    } else if (msg.type === "ping") {
-      sendJson({ type: "pong", timestamp: Date.now() });
+    } else if (msg.type === 'ping') {
+      sendJson({ type: 'pong', timestamp: Date.now() });
     }
   });
 
@@ -66,8 +66,8 @@ export function createWebSocketCallChannel(ws: WebSocket): CallChannel {
     onCloseCb?.();
   };
 
-  ws.on("close", handleClose);
-  ws.on("error", () => handleClose());
+  ws.on('close', handleClose);
+  ws.on('error', () => handleClose());
 
   return {
     sendAudio(chunk: ArrayBuffer) {
@@ -79,18 +79,21 @@ export function createWebSocketCallChannel(ws: WebSocket): CallChannel {
     },
     sendAudioComplete() {
       flushAudioBuffer();
-      sendJson({ type: "audioEnd" });
+      sendJson({ type: 'audioEnd' });
     },
     sendAudioStop() {
       audioBuffer = [];
       bufferedBytes = 0;
-      sendJson({ type: "audioStop" });
+      sendJson({ type: 'audioStop' });
     },
     sendTranscript(text, isFinal, role) {
-      sendJson({ type: "transcript", payload: { text, isFinal, timestamp: Date.now(), role: role ?? "user" } });
+      sendJson({
+        type: 'transcript',
+        payload: { text, isFinal, timestamp: Date.now(), role: role ?? 'user' },
+      });
     },
     sendError(message) {
-      sendJson({ type: "error", payload: { message } });
+      sendJson({ type: 'error', payload: { message } });
     },
     onAudio(cb) {
       onAudioCb = cb;

@@ -1,23 +1,23 @@
-import type { LLMProvider, LLMMessage } from "./llm.interface.js";
-import { parseOpenAIToken } from "./stream-types.js";
+import type { LLMProvider, LLMMessage } from './llm.interface.js';
+import { parseOpenAIToken } from './stream-types.js';
 
 export function createOpenAIProvider(apiKey: string): LLMProvider {
   return {
     async streamCompletion(
       messages: LLMMessage[],
       onToken: (token: string) => void,
-      signal?: AbortSignal
+      signal?: AbortSignal,
     ): Promise<void> {
       if (signal?.aborted) return;
 
-      const res = await fetch("https://api.openai.com/v1/chat/completions", {
-        method: "POST",
+      const res = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
         headers: {
-          "Content-Type": "application/json",
+          'Content-Type': 'application/json',
           Authorization: `Bearer ${apiKey}`,
         },
         body: JSON.stringify({
-          model: "gpt-4o-mini",
+          model: 'gpt-4o-mini',
           messages,
           stream: true,
           max_tokens: 200,
@@ -31,10 +31,10 @@ export function createOpenAIProvider(apiKey: string): LLMProvider {
       }
 
       const reader = res.body?.getReader();
-      if (!reader) throw new Error("No response body");
+      if (!reader) throw new Error('No response body');
 
       const decoder = new TextDecoder();
-      let buffer = "";
+      let buffer = '';
 
       try {
         while (true) {
@@ -44,14 +44,14 @@ export function createOpenAIProvider(apiKey: string): LLMProvider {
           if (value === undefined) break;
 
           buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split("\n");
+          const lines = buffer.split('\n');
           const last = lines.pop();
-          buffer = last ?? "";
+          buffer = last ?? '';
 
           for (const line of lines) {
-            if (line.startsWith("data: ")) {
+            if (line.startsWith('data: ')) {
               const data = line.slice(6);
-              if (data === "[DONE]") continue;
+              if (data === '[DONE]') continue;
               const token = parseOpenAIToken(data);
               if (token) onToken(token);
             }

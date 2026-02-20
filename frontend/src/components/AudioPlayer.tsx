@@ -1,6 +1,6 @@
-"use client";
+'use client';
 
-import { useCallback, useRef } from "react";
+import { useCallback, useRef } from 'react';
 
 const MIN_DECODE_BYTES = 2048;
 
@@ -15,11 +15,11 @@ export function useAudioPlayer() {
 
   const getContext = useCallback((): AudioContext => {
     let ctx = audioContextRef.current;
-    if (!ctx || ctx.state === "closed") {
+    if (!ctx || ctx.state === 'closed') {
       ctx = new AudioContext();
       audioContextRef.current = ctx;
     }
-    if (ctx.state === "suspended") ctx.resume().catch(() => {});
+    if (ctx.state === 'suspended') ctx.resume().catch(() => {});
     return ctx;
   }, []);
 
@@ -63,7 +63,8 @@ export function useAudioPlayer() {
     accumulatedBytesRef.current = 0;
 
     const ctx = getContext();
-    ctx.decodeAudioData(combined.buffer.slice(0))
+    ctx
+      .decodeAudioData(combined.buffer.slice(0))
       .then((decoded) => {
         if (isStoppedRef.current) return;
         playQueueRef.current.push(decoded);
@@ -74,17 +75,20 @@ export function useAudioPlayer() {
       });
   }, [getContext, playNext]);
 
-  const enqueueChunk = useCallback((chunk: ArrayBuffer): void => {
-    if (isStoppedRef.current) isStoppedRef.current = false;
-    if (chunk.byteLength === 0) return;
+  const enqueueChunk = useCallback(
+    (chunk: ArrayBuffer): void => {
+      if (isStoppedRef.current) isStoppedRef.current = false;
+      if (chunk.byteLength === 0) return;
 
-    accumulatorRef.current.push(new Uint8Array(chunk));
-    accumulatedBytesRef.current += chunk.byteLength;
+      accumulatorRef.current.push(new Uint8Array(chunk));
+      accumulatedBytesRef.current += chunk.byteLength;
 
-    if (accumulatedBytesRef.current >= MIN_DECODE_BYTES) {
-      tryDecodeAndQueue();
-    }
-  }, [tryDecodeAndQueue]);
+      if (accumulatedBytesRef.current >= MIN_DECODE_BYTES) {
+        tryDecodeAndQueue();
+      }
+    },
+    [tryDecodeAndQueue],
+  );
 
   const flushAccumulator = useCallback((): void => {
     if (accumulatedBytesRef.current > 0) {

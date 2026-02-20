@@ -1,10 +1,10 @@
-"use client";
+'use client';
 
-import { useCallback, useState } from "react";
-import { useVoiceConnection } from "@/lib/useVoiceConnection";
-import { useAudioPlayer } from "./AudioPlayer";
-import { AudioCapture } from "./AudioCapture";
-import { TranscriptDisplay } from "./TranscriptDisplay";
+import { useCallback, useState } from 'react';
+import { useVoiceConnection } from '@/lib/useVoiceConnection';
+import { useAudioPlayer } from './AudioPlayer';
+import { AudioCapture } from './AudioCapture';
+import { TranscriptDisplay } from './TranscriptDisplay';
 
 export function VoiceAssistant() {
   const [error, setError] = useState<string | null>(null);
@@ -32,10 +32,10 @@ export function VoiceAssistant() {
     (chunk: ArrayBuffer) => {
       sendAudio(chunk);
     },
-    [sendAudio]
+    [sendAudio],
   );
 
-  const isConnected = status === "connected";
+  const isConnected = status === 'connected';
 
   return (
     <div className="flex flex-col gap-6 max-w-md mx-auto p-6 border rounded-lg shadow-lg bg-white">
@@ -50,27 +50,23 @@ export function VoiceAssistant() {
       <div className="flex gap-4 items-center">
         <button
           onClick={isConnected ? handleDisconnect : handleConnect}
-          disabled={status === "connecting"}
+          disabled={status === 'connecting'}
           className={`px-4 py-2 rounded-lg font-medium transition-colors ${
             isConnected
-              ? "bg-red-500 hover:bg-red-600 text-white"
-              : "bg-green-500 hover:bg-green-600 text-white"
+              ? 'bg-red-500 hover:bg-red-600 text-white'
+              : 'bg-green-500 hover:bg-green-600 text-white'
           } disabled:opacity-50`}
         >
-          {status === "connecting"
-            ? "Connecting..."
-            : isConnected
-              ? "Disconnect"
-              : "Connect"}
+          {status === 'connecting' ? 'Connecting...' : isConnected ? 'Disconnect' : 'Connect'}
         </button>
         <div className="flex items-center gap-2">
           <span
             className={`inline-block w-2 h-2 rounded-full ${
-              status === "connected"
-                ? "bg-green-500 animate-pulse"
-                : status === "connecting"
-                  ? "bg-yellow-500 animate-pulse"
-                  : "bg-gray-400"
+              status === 'connected'
+                ? 'bg-green-500 animate-pulse'
+                : status === 'connecting'
+                  ? 'bg-yellow-500 animate-pulse'
+                  : 'bg-gray-400'
             }`}
           />
           <span className="text-sm text-gray-600">{status}</span>
@@ -81,9 +77,7 @@ export function VoiceAssistant() {
         <TranscriptDisplay messages={transcript} />
       </div>
 
-      {isConnected && (
-        <AudioCapture onAudioChunk={handleAudioChunk} enabled={isConnected} />
-      )}
+      {isConnected && <AudioCapture onAudioChunk={handleAudioChunk} enabled={isConnected} />}
     </div>
   );
 }

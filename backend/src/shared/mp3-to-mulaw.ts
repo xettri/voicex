@@ -1,29 +1,39 @@
-import { spawn, type ChildProcess } from "child_process";
-import { createRequire } from "module";
-import { createLogger } from "./logger.js";
+import { spawn, type ChildProcess } from 'child_process';
+import { createRequire } from 'module';
+import { createLogger } from './logger.js';
 
 const require = createRequire(import.meta.url);
-const ffmpegPath: string = require("ffmpeg-static");
-const logger = createLogger("Mp3ToMulaw");
+const ffmpegPath: string = require('ffmpeg-static');
+const logger = createLogger('Mp3ToMulaw');
 
 export function convertMp3ToMulaw(mp3Buffer: Buffer): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
-    const ff = spawn(ffmpegPath, [
-      "-loglevel", "error",
-      "-i", "pipe:0",
-      "-acodec", "pcm_mulaw",
-      "-ar", "8000",
-      "-ac", "1",
-      "-f", "mulaw",
-      "pipe:1",
-    ], { stdio: ["pipe", "pipe", "ignore"] });
+    const ff = spawn(
+      ffmpegPath,
+      [
+        '-loglevel',
+        'error',
+        '-i',
+        'pipe:0',
+        '-acodec',
+        'pcm_mulaw',
+        '-ar',
+        '8000',
+        '-ac',
+        '1',
+        '-f',
+        'mulaw',
+        'pipe:1',
+      ],
+      { stdio: ['pipe', 'pipe', 'ignore'] },
+    );
 
-    ff.stdin.on("error", reject);
-    ff.stdout.on("data", (chunk: Buffer) => chunks.push(chunk));
-    ff.stdout.on("end", () => resolve(Buffer.concat(chunks)));
-    ff.on("error", reject);
-    ff.on("close", (code) => {
+    ff.stdin.on('error', reject);
+    ff.stdout.on('data', (chunk: Buffer) => chunks.push(chunk));
+    ff.stdout.on('end', () => resolve(Buffer.concat(chunks)));
+    ff.on('error', reject);
+    ff.on('close', (code) => {
       if (code !== 0) reject(new Error(`ffmpeg exited with ${code}`));
     });
 
@@ -41,46 +51,57 @@ export interface StreamingMulawConverter {
 export function createStreamingMulawConverter(
   onMulawChunk: (chunk: Buffer) => void,
   onEnd: () => void,
-  onError: (err: Error) => void
+  onError: (err: Error) => void,
 ): StreamingMulawConverter {
   let ff: ChildProcess | null = null;
   let destroyed = false;
 
   try {
-    ff = spawn(ffmpegPath, [
-      "-loglevel", "error",
-      "-f", "mp3",
-      "-i", "pipe:0",
-      "-acodec", "pcm_mulaw",
-      "-ar", "8000",
-      "-ac", "1",
-      "-f", "mulaw",
-      "pipe:1",
-    ], { stdio: ["pipe", "pipe", "ignore"] });
+    ff = spawn(
+      ffmpegPath,
+      [
+        '-loglevel',
+        'error',
+        '-f',
+        'mp3',
+        '-i',
+        'pipe:0',
+        '-acodec',
+        'pcm_mulaw',
+        '-ar',
+        '8000',
+        '-ac',
+        '1',
+        '-f',
+        'mulaw',
+        'pipe:1',
+      ],
+      { stdio: ['pipe', 'pipe', 'ignore'] },
+    );
   } catch (err) {
     onError(err instanceof Error ? err : new Error(String(err)));
     return { write() {}, end() {}, destroy() {} };
   }
 
-  ff.stdout!.on("data", (chunk: Buffer) => {
+  ff.stdout!.on('data', (chunk: Buffer) => {
     if (!destroyed) onMulawChunk(chunk);
   });
 
-  ff.stdout!.on("end", () => {
+  ff.stdout!.on('end', () => {
     if (!destroyed) onEnd();
   });
 
-  ff.on("error", (err) => {
+  ff.on('error', (err) => {
     if (!destroyed) onError(err);
   });
 
-  ff.on("close", (code) => {
+  ff.on('close', (code) => {
     if (!destroyed && code !== 0 && code !== null) {
-      logger.error("Streaming ffmpeg exited", { code });
+      logger.error('Streaming ffmpeg exited', { code });
     }
   });
 
-  ff.stdin!.on("error", () => {});
+  ff.stdin!.on('error', () => {});
 
   return {
     write(mp3Chunk: Buffer) {
@@ -102,7 +123,7 @@ export function createStreamingMulawConverter(
     destroy() {
       destroyed = true;
       try {
-        ff?.kill("SIGKILL");
+        ff?.kill('SIGKILL');
       } catch {
         /* ignore */
       }

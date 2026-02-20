@@ -1,4 +1,4 @@
-import type { Db } from "mongodb";
+import type { Db } from 'mongodb';
 
 export interface UsageDoc {
   clientId: string;
@@ -12,10 +12,10 @@ export interface UsageDoc {
 export async function incrementUsage(
   db: Db,
   clientId: string,
-  delta: { sessions?: number; sttSeconds?: number; llmTokens?: number; ttsChars?: number }
+  delta: { sessions?: number; sttSeconds?: number; llmTokens?: number; ttsChars?: number },
 ): Promise<void> {
   const date = new Date().toISOString().slice(0, 10);
-  await db.collection<UsageDoc>("usage").updateOne(
+  await db.collection<UsageDoc>('usage').updateOne(
     { clientId, date },
     {
       $inc: {
@@ -25,6 +25,6 @@ export async function incrementUsage(
         ttsChars: delta.ttsChars ?? 0,
       },
     },
-    { upsert: true }
+    { upsert: true },
   );
 }

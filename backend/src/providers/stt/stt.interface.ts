@@ -10,6 +10,6 @@ export interface STTProvider {
   startSession(
     onTranscript: (result: TranscriptResult) => void,
     /** Called instantly when voice activity is detected (before transcription). Use for interrupt. */
-    onSpeechStart?: () => void
+    onSpeechStart?: () => void,
   ): Promise<{ sendAudio: (chunk: ArrayBuffer) => void; close: () => void }>;
 }

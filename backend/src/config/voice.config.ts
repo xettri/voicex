@@ -1,6 +1,6 @@
 export interface VoiceConfig {
   deepgramApiKey?: string;
-  llmProvider: "ollama" | "groq" | "openai";
+  llmProvider: 'ollama' | 'groq' | 'openai';
   ollamaBaseUrl?: string;
   groqApiKey?: string;
   openaiApiKey?: string;

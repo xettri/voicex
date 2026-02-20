@@ -1,10 +1,10 @@
-import pino from "pino";
+import pino from 'pino';
 
-const isProd = process.env.NODE_ENV === "production";
+const isProd = process.env.NODE_ENV === 'production';
 
 export const logger = pino({
-  level: process.env.LOG_LEVEL ?? (isProd ? "info" : "debug"),
-  ...(isProd ? {} : { transport: { target: "pino-pretty", options: { colorize: true } } }),
+  level: process.env.LOG_LEVEL ?? (isProd ? 'info' : 'debug'),
+  ...(isProd ? {} : { transport: { target: 'pino-pretty', options: { colorize: true } } }),
 });
 
 export function createLogger(prefix: string): {

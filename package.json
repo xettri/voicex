@@ -7,9 +7,11 @@
     "dev:frontend": "pnpm --filter frontend dev",
     "dev:backend": "pnpm --filter voicex-backend dev",
     "docs": "cd docs && pnpm dev",
-    "docs:build": "cd docs && npm run build"
+    "docs:build": "cd docs && npm run build",
+    "format": "prettier --write \"**/*.{js,jsx,ts,tsx,json,css,md}\""
   },
   "devDependencies": {
-    "@types/cors": "^2.8.19"
+    "@types/cors": "^2.8.19",
+    "prettier": "^3.8.1"
   }
 }

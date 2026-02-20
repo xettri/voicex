@@ -11,24 +11,24 @@ export interface OpenAIStreamChunk {
 export function parseOllamaToken(data: string): string {
   try {
     const parsed = JSON.parse(data) as unknown;
-    if (typeof parsed !== "object" || parsed === null) return "";
+    if (typeof parsed !== 'object' || parsed === null) return '';
     const chunk = parsed as OllamaStreamChunk;
-    return chunk.message?.content ?? "";
+    return chunk.message?.content ?? '';
   } catch {
-    return "";
+    return '';
   }
 }
 
 export function parseOpenAIToken(data: string): string {
   try {
     const parsed = JSON.parse(data) as unknown;
-    if (typeof parsed !== "object" || parsed === null) return "";
+    if (typeof parsed !== 'object' || parsed === null) return '';
     const chunk = parsed as OpenAIStreamChunk;
     const choices = chunk.choices;
     const first = Array.isArray(choices) ? choices[0] : undefined;
     const content = first?.delta?.content;
-    return typeof content === "string" ? content : "";
+    return typeof content === 'string' ? content : '';
   } catch {
-    return "";
+    return '';
   }
 }
