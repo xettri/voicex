@@ -2,8 +2,8 @@ import { ObjectId, type Db } from 'mongodb';
 import {
   type Agent,
   DEFAULT_AGENT_PERSONA,
-  DEFAULT_AGENT_VOICE,
-  DEFAULT_AGENT_LLM,
+  DEFAULT_LLM_CONFIG,
+  DEFAULT_TTS_CONFIG,
   DEFAULT_AGENT_THRESHOLDS,
 } from '../db/schema.js';
 
@@ -13,8 +13,13 @@ export interface CreateAgentInput {
   orgId: ObjectId;
   name: string;
   persona?: Partial<Agent['persona']>;
-  voice?: Partial<Agent['voice']>;
-  llm?: Partial<Agent['llm']>;
+  llmProviderId: ObjectId;
+  llmModelId: string;
+  llmConfig?: Partial<Agent['llmConfig']>;
+  ttsProviderId: ObjectId;
+  ttsModelId: string;
+  ttsConfig?: Partial<Agent['ttsConfig']>;
+  sttProviderId: ObjectId;
   thresholds?: Partial<Agent['thresholds']>;
 }
 
@@ -23,8 +28,13 @@ export async function createAgent(db: Db, input: CreateAgentInput): Promise<Agen
     orgId: input.orgId,
     name: input.name,
     persona: { ...DEFAULT_AGENT_PERSONA, ...input.persona },
-    voice: { ...DEFAULT_AGENT_VOICE, ...input.voice },
-    llm: { ...DEFAULT_AGENT_LLM, ...input.llm },
+    llmProviderId: input.llmProviderId,
+    llmModelId: input.llmModelId,
+    llmConfig: { ...DEFAULT_LLM_CONFIG, ...input.llmConfig },
+    ttsProviderId: input.ttsProviderId,
+    ttsModelId: input.ttsModelId,
+    ttsConfig: { ...DEFAULT_TTS_CONFIG, ...input.ttsConfig },
+    sttProviderId: input.sttProviderId,
     thresholds: { ...DEFAULT_AGENT_THRESHOLDS, ...input.thresholds },
     active: true,
     createdAt: new Date(),

@@ -1,40 +1,72 @@
 import type { ObjectId } from 'mongodb';
 
-export interface Organization {
+// ---------------------------------------------------------------------------
+// Plans
+// ---------------------------------------------------------------------------
+
+export interface PlanPricing {
+  monthly: number;
+  monthlyMaxDiscount: number;
+  annual: number;
+  annualMaxDiscount: number;
+}
+
+export interface PlanLimits {
+  maxAgents: number;
+  maxConcurrentCalls: number;
+  maxCallDurationSec: number;
+  maxMonthlyMinutes: number;
+}
+
+export interface PlanModels {
+  llm: string[];
+  tts: string[];
+  stt: string[];
+}
+
+export interface PlanFeatures {
+  customProviders: boolean;
+  maxCustomProviders: number;
+}
+
+export interface Plan {
   _id?: ObjectId;
+  slug: string;
   name: string;
-  plan: 'free' | 'starter' | 'pro' | 'enterprise';
-  limits: {
-    maxAgents: number;
-    maxConcurrentCalls: number;
-    maxCallDurationSec: number;
-    maxMonthlyMinutes: number;
-  };
+  description: string;
+  custom: boolean;
+  public: boolean;
+  pricing: PlanPricing;
+  limits: PlanLimits;
+  models: PlanModels;
+  features: PlanFeatures;
   createdAt: Date;
   updatedAt: Date;
 }
 
-export const PLAN_LIMITS: Record<Organization['plan'], Organization['limits']> = {
-  free: { maxAgents: 1, maxConcurrentCalls: 2, maxCallDurationSec: 300, maxMonthlyMinutes: 60 },
-  starter: {
-    maxAgents: 5,
-    maxConcurrentCalls: 10,
-    maxCallDurationSec: 1800,
-    maxMonthlyMinutes: 1000,
-  },
-  pro: {
-    maxAgents: 25,
-    maxConcurrentCalls: 50,
-    maxCallDurationSec: 3600,
-    maxMonthlyMinutes: 10000,
-  },
-  enterprise: {
-    maxAgents: 999,
-    maxConcurrentCalls: 500,
-    maxCallDurationSec: 7200,
-    maxMonthlyMinutes: 100000,
-  },
-};
+// ---------------------------------------------------------------------------
+// Organizations
+// ---------------------------------------------------------------------------
+
+export interface Organization {
+  _id?: ObjectId;
+  name: string;
+  planId: ObjectId;
+  status: 'pending' | 'active';
+  ownerEmail: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface User {
+  _id?: ObjectId;
+  orgId: ObjectId;
+  email: string;
+  passwordHash: string;
+  name: string;
+  role: 'admin' | 'member';
+  createdAt: Date;
+}
 
 export interface ApiKeyDoc {
   _id?: ObjectId;
@@ -48,6 +80,59 @@ export interface ApiKeyDoc {
   revokedAt: Date | null;
 }
 
+// ---------------------------------------------------------------------------
+// Providers (unified: global + client)
+// ---------------------------------------------------------------------------
+
+export type ProviderCategory = 'llm' | 'tts' | 'stt';
+
+export interface ProviderModel {
+  modelId: string;
+  label: string;
+  description: string;
+}
+
+export interface Provider {
+  _id?: ObjectId;
+  orgId: ObjectId | null;
+  category: ProviderCategory;
+  providerKey: string;
+  name: string;
+  credentials: string;
+  models: ProviderModel[];
+  settings: Record<string, unknown>;
+  active: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// ---------------------------------------------------------------------------
+// Provider registry (read-only template catalog)
+// ---------------------------------------------------------------------------
+
+export interface ProviderSettingDef {
+  key: string;
+  label: string;
+  type: 'string' | 'number' | 'boolean';
+  required: boolean;
+  placeholder?: string;
+}
+
+export interface ProviderRegistry {
+  _id?: ObjectId;
+  category: ProviderCategory;
+  providerKey: string;
+  displayName: string;
+  requiresKey: boolean;
+  models: string[];
+  settings: ProviderSettingDef[];
+  createdAt: Date;
+}
+
+// ---------------------------------------------------------------------------
+// Agents (relational — FK references to providers)
+// ---------------------------------------------------------------------------
+
 export interface AgentPersona {
   systemPrompt: string;
   greeting: string;
@@ -56,17 +141,13 @@ export interface AgentPersona {
   guardrails: string[];
 }
 
-export interface AgentVoice {
-  provider: 'elevenlabs' | 'openai' | 'edge';
-  voiceId: string;
-  speed: number;
-}
-
-export interface AgentLLM {
-  provider: 'groq' | 'openai' | 'ollama';
-  model: string;
+export interface AgentLLMConfig {
   temperature: number;
   maxTokens: number;
+}
+
+export interface AgentTTSConfig {
+  speed: number;
 }
 
 export interface AgentThresholds {
@@ -76,13 +157,20 @@ export interface AgentThresholds {
   endpointingMs: number;
 }
 
+export type AgentStatus = 'active' | 'inactive' | 'paused_provider' | 'paused_plan';
+
 export interface Agent {
   _id?: ObjectId;
   orgId: ObjectId;
   name: string;
   persona: AgentPersona;
-  voice: AgentVoice;
-  llm: AgentLLM;
+  llmProviderId: ObjectId;
+  llmModelId: string;
+  llmConfig: AgentLLMConfig;
+  ttsProviderId: ObjectId;
+  ttsModelId: string;
+  ttsConfig: AgentTTSConfig;
+  sttProviderId: ObjectId;
   thresholds: AgentThresholds;
   active: boolean;
   createdAt: Date;
@@ -103,17 +191,13 @@ export const DEFAULT_AGENT_PERSONA: AgentPersona = {
   ],
 };
 
-export const DEFAULT_AGENT_VOICE: AgentVoice = {
-  provider: 'elevenlabs',
-  voiceId: '21m00Tcm4TlvDq8ikWAM',
-  speed: 1.0,
-};
-
-export const DEFAULT_AGENT_LLM: AgentLLM = {
-  provider: 'groq',
-  model: 'llama-3.3-70b-versatile',
+export const DEFAULT_LLM_CONFIG: AgentLLMConfig = {
   temperature: 0.4,
   maxTokens: 200,
+};
+
+export const DEFAULT_TTS_CONFIG: AgentTTSConfig = {
+  speed: 1.0,
 };
 
 export const DEFAULT_AGENT_THRESHOLDS: AgentThresholds = {
@@ -122,6 +206,10 @@ export const DEFAULT_AGENT_THRESHOLDS: AgentThresholds = {
   interruptionSensitivity: 'medium',
   endpointingMs: 200,
 };
+
+// ---------------------------------------------------------------------------
+// Calls
+// ---------------------------------------------------------------------------
 
 export interface CallMetrics {
   ttfbMs: number | null;
@@ -159,6 +247,10 @@ export interface Call {
   };
   createdAt: Date;
 }
+
+// ---------------------------------------------------------------------------
+// Usage
+// ---------------------------------------------------------------------------
 
 export interface DailyUsage {
   _id?: ObjectId;

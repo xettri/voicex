@@ -9,6 +9,9 @@ import { handleVoiceConnection } from '../handlers/voice.handler.js';
 import { handleTwilioConnection } from '../handlers/twilio.handler.js';
 import { resolveApiKey } from '../repositories/apikey.repository.js';
 import { getAgent, getDefaultAgent } from '../repositories/agent.repository.js';
+import { getOrganization } from '../repositories/organization.repository.js';
+import { getPlanCached, isModelAllowed } from '../repositories/plan.repository.js';
+import { batchGetProviders } from '../repositories/provider.repository.js';
 import type { VoiceConfig } from '../config/voice.config.js';
 import type { Agent } from '../db/schema.js';
 
@@ -62,6 +65,72 @@ async function resolveAgent(
   }
 }
 
+async function validateAgentAccess(
+  ws: WebSocket,
+  db: Db,
+  orgId: ObjectId,
+  agent: Agent,
+  requestId: string,
+): Promise<boolean> {
+  const providerMap = await batchGetProviders(db, [agent.llmProviderId, agent.ttsProviderId, agent.sttProviderId]);
+
+  const llmProv = providerMap.get(agent.llmProviderId.toHexString());
+  const ttsProv = providerMap.get(agent.ttsProviderId.toHexString());
+  const sttProv = providerMap.get(agent.sttProviderId.toHexString());
+
+  if (!llmProv || !ttsProv || !sttProv) {
+    ws.send(JSON.stringify({ type: 'error', payload: { message: 'Agent has invalid provider configuration.' } }));
+    ws.close(4004, 'Provider not found');
+    logger.info('WebSocket rejected: provider not found', { requestId });
+    return false;
+  }
+
+  if (!llmProv.active) {
+    ws.send(JSON.stringify({ type: 'error', payload: { message: 'Agent LLM provider is disabled.' } }));
+    ws.close(4004, 'Provider disabled');
+    logger.info('WebSocket rejected: LLM provider disabled', { requestId });
+    return false;
+  }
+  if (!ttsProv.active) {
+    ws.send(JSON.stringify({ type: 'error', payload: { message: 'Agent TTS provider is disabled.' } }));
+    ws.close(4004, 'Provider disabled');
+    return false;
+  }
+  if (!sttProv.active) {
+    ws.send(JSON.stringify({ type: 'error', payload: { message: 'Agent STT provider is disabled.' } }));
+    ws.close(4004, 'Provider disabled');
+    return false;
+  }
+
+  const org = await getOrganization(db, orgId);
+  if (!org) { ws.close(4001, 'Unauthorized'); return false; }
+
+  const plan = await getPlanCached(db, org.planId);
+  if (!plan) { ws.close(4001, 'Plan not found'); return false; }
+
+  if (llmProv.orgId === null) {
+    const key = `${llmProv.providerKey}/${agent.llmModelId}`;
+    if (!isModelAllowed(plan, 'llm', llmProv.providerKey, agent.llmModelId)) {
+      ws.send(JSON.stringify({ type: 'error', payload: { message: `LLM "${key}" is not available on your plan.` } }));
+      ws.close(4003, 'Model not allowed');
+      logger.info('WebSocket rejected: model not on plan', { requestId, key });
+      return false;
+    }
+  }
+
+  if (ttsProv.orgId === null) {
+    const key = `${ttsProv.providerKey}/${agent.ttsModelId}`;
+    if (!isModelAllowed(plan, 'tts', ttsProv.providerKey, agent.ttsModelId)) {
+      ws.send(JSON.stringify({ type: 'error', payload: { message: `Voice "${key}" is not available on your plan.` } }));
+      ws.close(4003, 'Model not allowed');
+      logger.info('WebSocket rejected: model not on plan', { requestId, key });
+      return false;
+    }
+  }
+
+  return true;
+}
+
 export function createWebSocketGateway(
   server: import('http').Server,
   config: VoiceConfig,
@@ -70,21 +139,15 @@ export function createWebSocketGateway(
 
   let getDbFn: (() => Promise<Db>) | null = null;
   import('../db/client.js')
-    .then((m) => {
-      getDbFn = m.getDb;
-    })
+    .then((m) => { getDbFn = m.getDb; })
     .catch(() => {});
 
   server.on('upgrade', (req: IncomingMessage, socket, head) => {
     const path = req.url?.split('?')[0];
     if (path === '/ws/voice') {
-      wss.handleUpgrade(req, socket, head, (ws) => {
-        wss.emit('connection', ws, req);
-      });
+      wss.handleUpgrade(req, socket, head, (ws) => { wss.emit('connection', ws, req); });
     } else if (path === '/ws/twilio/stream' && config.twilioAppUrl) {
-      wss.handleUpgrade(req, socket, head, (ws) => {
-        wss.emit('twilio-connection', ws, req);
-      });
+      wss.handleUpgrade(req, socket, head, (ws) => { wss.emit('twilio-connection', ws, req); });
     } else {
       socket.destroy();
     }
@@ -95,46 +158,27 @@ export function createWebSocketGateway(
     const url = req.url ?? '';
 
     let db: Db | null = null;
-    try {
-      if (getDbFn) db = await getDbFn();
-    } catch {
-      /* no db */
-    }
+    try { if (getDbFn) db = await getDbFn(); } catch { /* no db */ }
 
     const { valid, clientId, orgId } = await authenticate(url, config, db);
-    if (!valid) {
-      ws.close(4001, 'Unauthorized');
-      logger.info('WebSocket rejected: unauthorized', { requestId });
-      return;
-    }
+    if (!valid) { ws.close(4001, 'Unauthorized'); logger.info('WebSocket rejected: unauthorized', { requestId }); return; }
 
     const rateLimitId = clientId ?? req.socket?.remoteAddress ?? 'unknown';
-    const allowed = await checkRateLimit(rateLimitId);
-    if (!allowed) {
-      ws.close(4029, 'Rate limit exceeded');
-      return;
-    }
+    if (!(await checkRateLimit(rateLimitId))) { ws.close(4029, 'Rate limit exceeded'); return; }
 
     const agent = await resolveAgent(url, db, orgId);
+
+    if (agent && db && orgId) {
+      if (!(await validateAgentAccess(ws, db, orgId, agent, requestId))) return;
+    }
+
     const sessionIdParam = new URL(url, 'http://localhost').searchParams.get('session_id');
     const historyKey = sessionIdParam || clientId || requestId;
 
     logger.info('WebSocket connected', {
-      requestId,
-      clientId,
-      orgId: orgId?.toHexString(),
-      agentId: agent?._id?.toHexString(),
-      historyKey,
+      requestId, clientId, orgId: orgId?.toHexString(), agentId: agent?._id?.toHexString(), historyKey,
     });
-    handleVoiceConnection(
-      ws,
-      requestId,
-      config,
-      clientId ?? undefined,
-      historyKey,
-      agent,
-      orgId?.toHexString(),
-    );
+    handleVoiceConnection(ws, requestId, config, clientId ?? undefined, historyKey, agent, orgId?.toHexString());
   });
 
   wss.on('twilio-connection', async (ws: WebSocket, req: IncomingMessage) => {
@@ -142,34 +186,20 @@ export function createWebSocketGateway(
     const url = req.url ?? '';
 
     let db: Db | null = null;
-    try {
-      if (getDbFn) db = await getDbFn();
-    } catch {
-      /* no db */
-    }
+    try { if (getDbFn) db = await getDbFn(); } catch { /* no db */ }
 
     const { valid, clientId, orgId } = await authenticate(url, config, db);
-    if (!valid) {
-      ws.close(4001, 'Unauthorized');
-      return;
-    }
+    if (!valid) { ws.close(4001, 'Unauthorized'); return; }
 
     const agent = await resolveAgent(url, db, orgId);
+
+    if (agent && db && orgId) {
+      if (!(await validateAgentAccess(ws, db, orgId, agent, requestId))) return;
+    }
+
     const historyKey = clientId ?? requestId;
-    logger.info('Twilio stream connected', {
-      requestId,
-      clientId,
-      agentId: agent?._id?.toHexString(),
-    });
-    handleTwilioConnection(
-      ws,
-      requestId,
-      config,
-      clientId ?? undefined,
-      historyKey,
-      agent,
-      orgId?.toHexString(),
-    );
+    logger.info('Twilio stream connected', { requestId, clientId, agentId: agent?._id?.toHexString() });
+    handleTwilioConnection(ws, requestId, config, clientId ?? undefined, historyKey, agent, orgId?.toHexString());
   });
 
   return wss;

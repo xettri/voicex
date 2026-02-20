@@ -27,9 +27,11 @@ if (env.REDIS_URL) {
   const { initRateLimitRedis } = await import('./middleware/rate-limit.js');
   const { initConversationHistoryRedis } =
     await import('./repositories/conversation-history.repository.js');
+  const { initPlanCacheRedis } = await import('./repositories/plan.repository.js');
   await Promise.all([
     initRateLimitRedis(env.REDIS_URL),
     initConversationHistoryRedis(env.REDIS_URL),
+    initPlanCacheRedis(env.REDIS_URL),
   ]);
 }
 

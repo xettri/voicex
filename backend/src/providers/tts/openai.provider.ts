@@ -1,6 +1,6 @@
 import type { TTSProvider } from './tts.interface.js';
 
-export function createOpenAITTSProvider(apiKey: string): TTSProvider {
+export function createOpenAITTSProvider(apiKey: string, voice = 'alloy'): TTSProvider {
   return {
     async streamAudio(
       text: string,
@@ -18,7 +18,7 @@ export function createOpenAITTSProvider(apiKey: string): TTSProvider {
         body: JSON.stringify({
           model: 'tts-1',
           input: text,
-          voice: 'alloy',
+          voice,
           response_format: 'mp3',
           speed: 1.0,
         }),

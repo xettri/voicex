@@ -9,25 +9,28 @@ export interface LLMProviderConfig {
   openaiApiKey?: string;
 }
 
-/** Priority: OpenAI (standard) → Groq → Ollama. Falls back to next if requested provider has no key. */
 export function createLLMProvider(
   provider: 'ollama' | 'groq' | 'openai',
   config: LLMProviderConfig,
+  model?: string,
 ): LLMProvider {
   if (provider === 'openai' && typeof config.openaiApiKey === 'string') {
-    return createOpenAIProvider(config.openaiApiKey);
+    return createOpenAIProvider(config.openaiApiKey, model ?? 'gpt-4o-mini');
   }
   if (provider === 'groq' && typeof config.groqApiKey === 'string') {
-    return createGroqProvider(config.groqApiKey);
+    return createGroqProvider(config.groqApiKey, model ?? 'llama-3.3-70b-versatile');
   }
   if (provider === 'ollama') {
-    const baseUrl =
-      typeof config.ollamaBaseUrl === 'string' ? config.ollamaBaseUrl : 'http://localhost:11434';
-    return createOllamaProvider(baseUrl);
+    const baseUrl = config.ollamaBaseUrl ?? 'http://localhost:11434';
+    return createOllamaProvider(baseUrl, model ?? 'llama3.2:3b');
   }
-  if (typeof config.openaiApiKey === 'string') return createOpenAIProvider(config.openaiApiKey);
-  if (typeof config.groqApiKey === 'string') return createGroqProvider(config.groqApiKey);
-  const baseUrl =
-    typeof config.ollamaBaseUrl === 'string' ? config.ollamaBaseUrl : 'http://localhost:11434';
-  return createOllamaProvider(baseUrl);
+  // Fallback chain
+  if (typeof config.openaiApiKey === 'string') {
+    return createOpenAIProvider(config.openaiApiKey, model ?? 'gpt-4o-mini');
+  }
+  if (typeof config.groqApiKey === 'string') {
+    return createGroqProvider(config.groqApiKey, model ?? 'llama-3.3-70b-versatile');
+  }
+  const baseUrl = config.ollamaBaseUrl ?? 'http://localhost:11434';
+  return createOllamaProvider(baseUrl, model ?? 'llama3.2:3b');
 }

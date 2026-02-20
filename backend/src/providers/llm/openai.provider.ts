@@ -1,7 +1,7 @@
 import type { LLMProvider, LLMMessage } from './llm.interface.js';
 import { parseOpenAIToken } from './stream-types.js';
 
-export function createOpenAIProvider(apiKey: string): LLMProvider {
+export function createOpenAIProvider(apiKey: string, model = 'gpt-4o-mini'): LLMProvider {
   return {
     async streamCompletion(
       messages: LLMMessage[],
@@ -17,7 +17,7 @@ export function createOpenAIProvider(apiKey: string): LLMProvider {
           Authorization: `Bearer ${apiKey}`,
         },
         body: JSON.stringify({
-          model: 'gpt-4o-mini',
+          model,
           messages,
           stream: true,
           max_tokens: 200,

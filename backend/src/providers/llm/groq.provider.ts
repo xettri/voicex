@@ -1,7 +1,7 @@
 import type { LLMProvider, LLMMessage } from './llm.interface.js';
 import { parseOpenAIToken } from './stream-types.js';
 
-export function createGroqProvider(apiKey: string): LLMProvider {
+export function createGroqProvider(apiKey: string, model = 'llama-3.3-70b-versatile'): LLMProvider {
   return {
     async streamCompletion(
       messages: LLMMessage[],
@@ -17,7 +17,7 @@ export function createGroqProvider(apiKey: string): LLMProvider {
           Authorization: `Bearer ${apiKey}`,
         },
         body: JSON.stringify({
-          model: 'llama-3.3-70b-versatile',
+          model,
           messages,
           stream: true,
           temperature: 0.6,

@@ -1,17 +1,20 @@
 import { ObjectId, type Db } from 'mongodb';
-import { PLAN_LIMITS, type Organization } from '../db/schema.js';
+import type { Organization } from '../db/schema.js';
 
 const COL = 'organizations';
 
 export async function createOrganization(
   db: Db,
   name: string,
-  plan: Organization['plan'] = 'free',
+  planId: ObjectId,
+  ownerEmail = '',
+  status: Organization['status'] = 'active',
 ): Promise<Organization> {
   const doc: Organization = {
     name,
-    plan,
-    limits: PLAN_LIMITS[plan],
+    planId,
+    status,
+    ownerEmail,
     createdAt: new Date(),
     updatedAt: new Date(),
   };
@@ -26,14 +29,12 @@ export async function getOrganization(db: Db, orgId: ObjectId): Promise<Organiza
 export async function updateOrganization(
   db: Db,
   orgId: ObjectId,
-  update: Partial<Pick<Organization, 'name' | 'plan'>>,
+  update: Partial<Pick<Organization, 'name' | 'planId' | 'status'>>,
 ): Promise<void> {
   const set: Record<string, unknown> = { updatedAt: new Date() };
   if (update.name) set.name = update.name;
-  if (update.plan) {
-    set.plan = update.plan;
-    set.limits = PLAN_LIMITS[update.plan];
-  }
+  if (update.planId) set.planId = update.planId;
+  if (update.status) set.status = update.status;
   await db.collection<Organization>(COL).updateOne({ _id: orgId }, { $set: set });
 }
 

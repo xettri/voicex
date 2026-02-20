@@ -16,6 +16,7 @@ import {
   saveHistory,
   type HistoryMessage,
 } from '../repositories/conversation-history.repository.js';
+import { getProviderDecrypted } from '../repositories/provider.repository.js';
 import type { CallChannel } from '../providers/call/call.interface.js';
 import type { Agent, AgentThresholds } from '../db/schema.js';
 
@@ -44,15 +45,15 @@ const INTERRUPT_SENSITIVITY: Record<AgentThresholds['interruptionSensitivity'], 
   high: 1,
 };
 
-export function runVoiceSession(
+export async function runVoiceSession(
   channel: CallChannel,
   sessionId: string,
   config: VoiceSessionConfig,
   clientId?: string,
   historyKey?: string,
-): void {
+): Promise<void> {
   let sttSession: STTSession | null = null;
-  const { deepgramApiKey, mongodbUri, agent } = config;
+  const { mongodbUri, agent } = config;
   const key = historyKey ?? sessionId;
   const thresholds = agent?.thresholds ?? {
     silenceTimeoutMs: 700,
@@ -77,13 +78,69 @@ export function runVoiceSession(
       .catch((err) => logger.error('Failed to create call record', err));
   }
 
-  const llmConfig = agent?.llm;
-  const llm = createLLMProvider(llmConfig?.provider ?? config.llmProvider, {
+  let llmProviderKey = config.llmProvider;
+  let llmModelId: string | undefined;
+  let llmKeys = {
     ollamaBaseUrl: config.ollamaBaseUrl,
     groqApiKey: config.groqApiKey,
     openaiApiKey: config.openaiApiKey,
+  };
+  const ttsKeys: { elevenLabsKey?: string; openaiKey?: string; systemTts?: { cmd: string; ext: string } } = {
+    elevenLabsKey: config.elevenLabsApiKey,
+    openaiKey: config.openaiApiKey,
+    systemTts: config.systemTts,
+  };
+  let ttsProviderKey: string | undefined;
+  let ttsVoiceId: string | undefined;
+  let sttApiKey = config.deepgramApiKey;
+  let maxTokensForContext = 4096;
+
+  const resolveProviderCredentials = async () => {
+    if (!agent) return;
+    const db = await getDb();
+
+    const llmResult = await getProviderDecrypted(db, agent.llmProviderId);
+    if (llmResult) {
+      const { provider: prov, decryptedCredentials: creds } = llmResult;
+      llmProviderKey = prov.providerKey as typeof llmProviderKey;
+      llmModelId = agent.llmModelId;
+      llmKeys = {
+        ollamaBaseUrl: creds.baseUrl ?? (prov.settings.baseUrl as string | undefined) ?? llmKeys.ollamaBaseUrl,
+        groqApiKey: creds.apiKey ?? llmKeys.groqApiKey,
+        openaiApiKey: creds.apiKey ?? llmKeys.openaiApiKey,
+      };
+    }
+
+    const ttsResult = await getProviderDecrypted(db, agent.ttsProviderId);
+    if (ttsResult) {
+      const { provider: prov, decryptedCredentials: creds } = ttsResult;
+      ttsProviderKey = prov.providerKey;
+      ttsVoiceId = agent.ttsModelId;
+      if (prov.providerKey === 'elevenlabs') ttsKeys.elevenLabsKey = creds.apiKey ?? ttsKeys.elevenLabsKey;
+      if (prov.providerKey === 'openai') ttsKeys.openaiKey = creds.apiKey ?? ttsKeys.openaiKey;
+    }
+
+    const sttResult = await getProviderDecrypted(db, agent.sttProviderId);
+    if (sttResult) {
+      const { decryptedCredentials: creds } = sttResult;
+      if (creds.apiKey) sttApiKey = creds.apiKey;
+    }
+
+    maxTokensForContext = (agent.llmConfig?.maxTokens ?? 200) * 10;
+  };
+
+  try {
+    await resolveProviderCredentials();
+  } catch (err) {
+    logger.error('Failed to resolve provider credentials, falling back to platform keys', err);
+  }
+
+  const llm = createLLMProvider(llmProviderKey, llmKeys, llmModelId);
+  const tts = createTTSProvider({
+    ...ttsKeys,
+    provider: ttsProviderKey as 'elevenlabs' | 'openai' | 'edge' | undefined,
+    voiceId: ttsVoiceId,
   });
-  const tts = createTTSProvider(config.elevenLabsApiKey, config.openaiApiKey, config.systemTts);
   const pipeline = createVoicePipelineService({ llm, tts });
 
   let pipelineAbortController: AbortController | null = null;
@@ -203,7 +260,7 @@ export function runVoiceSession(
         controller.signal,
         conversationHistory.slice(0, -1),
         agent?.persona,
-        agent?.llm?.maxTokens ? agent.llm.maxTokens * 10 : 4096,
+        maxTokensForContext,
       )
       .catch((err: unknown) => {
         if (err instanceof Error && err.name === 'AbortError') return;
@@ -251,7 +308,7 @@ export function runVoiceSession(
         endpointingMs,
       }
     : { encoding: 'linear16' as const, sampleRate: 16000, endpointingMs };
-  const provider = createDeepgramProvider(deepgramApiKey, sttOptions);
+  const provider = createDeepgramProvider(sttApiKey, sttOptions);
 
   provider
     .startSession(

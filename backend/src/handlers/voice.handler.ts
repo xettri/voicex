@@ -62,5 +62,9 @@ export function handleVoiceConnection(
     { ...config, deepgramApiKey, agent, orgId, channel: 'web' },
     clientId,
     historyKey ?? requestId,
-  );
+  ).catch((err) => {
+    logger.error('Voice session failed to start', err);
+    sendError(ws, 'Failed to start voice session');
+    ws.close(4500, 'Session startup error');
+  });
 }

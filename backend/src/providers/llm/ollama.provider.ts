@@ -3,7 +3,7 @@ import { parseOllamaToken } from './stream-types.js';
 
 const LLM_TIMEOUT_MS = 15_000;
 
-export function createOllamaProvider(baseUrl: string): LLMProvider {
+export function createOllamaProvider(baseUrl: string, model = 'llama3.2:3b'): LLMProvider {
   return {
     async streamCompletion(
       messages: LLMMessage[],
@@ -29,7 +29,7 @@ export function createOllamaProvider(baseUrl: string): LLMProvider {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            model: 'llama3.2:3b',
+            model,
             messages,
             stream: true,
             options: {

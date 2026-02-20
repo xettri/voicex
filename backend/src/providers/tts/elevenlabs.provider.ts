@@ -4,7 +4,7 @@ import type { TTSProvider } from './tts.interface.js';
 const logger = createLogger('ElevenLabsTTS');
 const DEFAULT_VOICE = '21m00Tcm4TlvDq8ikWAM';
 
-export function createElevenLabsProvider(apiKey: string): TTSProvider {
+export function createElevenLabsProvider(apiKey: string, voiceId = DEFAULT_VOICE): TTSProvider {
   return {
     async streamAudio(
       text: string,
@@ -15,7 +15,7 @@ export function createElevenLabsProvider(apiKey: string): TTSProvider {
       if (!text.trim()) return;
 
       const res = await fetch(
-        `https://api.elevenlabs.io/v1/text-to-speech/${DEFAULT_VOICE}/stream`,
+        `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream`,
         {
           method: 'POST',
           headers: {

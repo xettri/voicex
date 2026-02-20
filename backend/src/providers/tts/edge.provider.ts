@@ -1,9 +1,9 @@
 import { MsEdgeTTS, OUTPUT_FORMAT } from 'edge-tts-node';
 import type { TTSProvider } from './tts.interface.js';
 
-const VOICE = 'en-US-AriaNeural';
+const DEFAULT_VOICE = 'en-US-AriaNeural';
 
-export function createEdgeTTSProvider(): TTSProvider {
+export function createEdgeTTSProvider(voice = DEFAULT_VOICE): TTSProvider {
   return {
     async streamAudio(
       text: string,
@@ -13,7 +13,7 @@ export function createEdgeTTSProvider(): TTSProvider {
       if (signal?.aborted) return;
 
       const tts = new MsEdgeTTS({});
-      await tts.setMetadata(VOICE, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
+      await tts.setMetadata(voice, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
       const readable = tts.toStream(text);
 
       const onAbort = (): void => {

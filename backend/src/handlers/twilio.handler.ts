@@ -48,5 +48,8 @@ export function handleTwilioConnection(
     },
     clientId,
     historyKey ?? requestId,
-  );
+  ).catch((err) => {
+    logger.error('Twilio voice session failed to start', err);
+    ws.close(4500, 'Session startup error');
+  });
 }
