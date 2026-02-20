@@ -2,26 +2,47 @@
 
 Connect phone calls to the AI assistant via Twilio Media Streams.
 
+---
+
 ## How It Works
 
-```
-Caller → Twilio → POST /api/twilio/voice → TwiML (Connect to Media Stream)
-                                          ↓
-                                 /ws/twilio/stream (WebSocket)
-                                          ↓
-                            Audio: mulaw 8kHz ↔ STT → LLM → TTS
+```mermaid
+sequenceDiagram
+    participant Caller as Phone Caller
+    participant Twilio as Twilio
+    participant API as POST /api/twilio/voice
+    participant WS as /ws/twilio/stream
+    participant Pipeline as STT → LLM → TTS
+
+    Caller->>Twilio: Dials phone number
+    Twilio->>API: Webhook POST (with api_key in URL)
+    API->>API: Validate API key
+    API-->>Twilio: TwiML (Connect to Media Stream)
+    Twilio->>WS: Open WebSocket (Media Stream)
+    WS->>WS: Auth + agent resolution
+
+    loop Voice conversation
+        Twilio->>WS: Audio (mu-law 8kHz, base64 JSON)
+        WS->>Pipeline: Convert to PCM → STT → LLM → TTS
+        Pipeline-->>WS: MP3 audio
+        WS->>WS: Convert MP3 → mu-law
+        WS->>Twilio: Audio (mu-law, base64 JSON)
+        Twilio->>Caller: Plays audio
+    end
+
+    Caller->>Twilio: Hangs up
+    Twilio->>WS: Close stream
 ```
 
-1. Caller dials a Twilio number
-2. Twilio sends a webhook to your server
-3. Server responds with TwiML that starts a Media Stream
-4. Audio is streamed bidirectionally over WebSocket
-5. Backend runs the same STT → LLM → TTS pipeline (with mulaw conversion)
+---
 
 ## Prerequisites
 
 - A [Twilio account](https://www.twilio.com/try-twilio) with a phone number
-- Your backend accessible from the internet (for the webhook)
+- Your Voicex backend accessible from the internet (for the webhook)
+- An API key from the Voicex dashboard
+
+---
 
 ## Configuration
 
@@ -29,21 +50,10 @@ Set in `backend/.env.local`:
 
 ```bash
 # Your backend's public URL (no trailing slash)
-TWILIO_APP_URL=http://localhost:3001
-
-# API keys for auth (Twilio webhook includes the key in the URL)
-API_KEYS=sk_live_abc123
+TWILIO_APP_URL=https://api.your-domain.com
 ```
 
-::: warning
-For production, `TWILIO_APP_URL` must be an HTTPS URL accessible from the internet. Use ngrok for local testing:
-
-```bash
-ngrok http 3001
-# Then set TWILIO_APP_URL=https://abc123.ngrok.io
-```
-
-:::
+---
 
 ## Twilio Console Setup
 
@@ -51,44 +61,90 @@ ngrok http 3001
 2. Click your phone number
 3. Under **Voice Configuration**:
    - **A call comes in:** Webhook
-   - **URL:** `http://localhost:3001/api/twilio/voice?api_key=sk_live_abc123`
+   - **URL:** `https://api.your-domain.com/api/twilio/voice?api_key=vx_a1b2c3d4e5f6...`
    - **Method:** POST
+
+Optionally add `&agent_id=664a...` to use a specific agent.
+
+---
 
 ## Audio Format
 
-Twilio Media Streams use **mulaw encoding at 8kHz**. The backend automatically:
+Twilio Media Streams use **mu-law encoding at 8kHz**. The backend automatically handles conversion:
 
-- Converts incoming mulaw to the format Deepgram expects
-- Converts outgoing MP3 (from TTS) to mulaw for Twilio playback
+| Direction | Twilio format | Backend format | Conversion |
+|-----------|--------------|----------------|------------|
+| Incoming | mu-law 8kHz (base64 JSON) | PCM 16-bit 16kHz | `alawmulaw` decoder |
+| Outgoing | mu-law 8kHz (base64 JSON) | MP3 (from TTS) | FFmpeg MP3 → mu-law |
+
+---
 
 ## Testing Locally
 
-1. Install [ngrok](https://ngrok.com/):
+Since Twilio needs to reach your server over the internet, use ngrok for local testing:
 
-   ```bash
-   ngrok http 3001
-   ```
+### Step 1: Start ngrok
 
-2. Set the ngrok URL:
-
-   ```bash
-   TWILIO_APP_URL=https://abc123.ngrok.io
-   ```
-
-3. Update Twilio webhook URL to use the ngrok URL:
-
-   ```
-   https://abc123.ngrok.io/api/twilio/voice?api_key=sk_live_abc123
-   ```
-
-4. Call your Twilio number!
-
-## Multi-Tenant
-
-Each client configures their own Twilio number's webhook to point to your server with their unique API key:
-
-```
-https://your-server.com/api/twilio/voice?api_key=CLIENT_SPECIFIC_KEY
+```bash
+ngrok http 3001
 ```
 
-Usage is tracked per client via MongoDB when `MONGODB_URI` is set.
+Note the HTTPS URL (e.g., `https://abc123.ngrok.io`).
+
+### Step 2: Configure backend
+
+```bash
+TWILIO_APP_URL=https://abc123.ngrok.io
+```
+
+### Step 3: Update Twilio webhook
+
+Set the webhook URL to:
+
+```
+https://abc123.ngrok.io/api/twilio/voice?api_key=vx_a1b2c3d4e5f6...
+```
+
+### Step 4: Call your Twilio number
+
+The AI assistant will answer.
+
+---
+
+## Multi-Tenant Setup
+
+Each client uses their own Twilio account and phone number. They configure their Twilio webhook to point to your Voicex server with their unique API key:
+
+```
+https://your-voicex-server.com/api/twilio/voice?api_key=CLIENT_API_KEY
+```
+
+**What the client provides:**
+- Their own Twilio account + phone number
+- Their Voicex API key (from the dashboard)
+
+**What you provide:**
+- AI processing (STT, LLM, TTS)
+- Agent configuration and management
+
+**Usage tracking:** All calls are tracked per organization via the `orgId` resolved from the API key.
+
+---
+
+## Agent Selection for Phone Calls
+
+By default, the system uses the org's first active agent. To use a specific agent, add `agent_id` to the webhook URL:
+
+```
+https://your-server.com/api/twilio/voice?api_key=vx_...&agent_id=664a1234abcd
+```
+
+This lets clients assign different phone numbers to different agents (e.g., sales line vs support line).
+
+---
+
+## Limitations
+
+- **Audio quality:** Phone audio is 8kHz mu-law (lower quality than browser 16kHz PCM). STT accuracy may be slightly lower.
+- **Latency:** Additional Twilio network hop adds ~50-100ms compared to direct WebSocket.
+- **Codec conversion:** MP3 → mu-law conversion uses FFmpeg and adds a small processing overhead.

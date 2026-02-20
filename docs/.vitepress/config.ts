@@ -4,7 +4,7 @@ import { withMermaid } from 'vitepress-plugin-mermaid';
 export default withMermaid(
   defineConfig({
     title: 'Voicex',
-    description: 'Real-time AI voice assistant platform',
+    description: 'Real-time AI voice agent platform — build, deploy, and manage AI voice agents',
     srcDir: 'src',
     base: process.env.DOCS_BASE || '/',
     ignoreDeadLinks: true,
@@ -14,8 +14,8 @@ export default withMermaid(
       siteTitle: 'Voicex',
       nav: [
         { text: 'Guide', link: '/getting-started' },
-        { text: 'API', link: '/websocket-api' },
-        { text: 'Providers', link: '/providers' },
+        { text: 'API', link: '/rest-api' },
+        { text: 'Architecture', link: '/architecture' },
         { text: 'Deploy', link: '/deployment' },
       ],
       sidebar: [
@@ -25,28 +25,38 @@ export default withMermaid(
             { text: 'What is Voicex?', link: '/' },
             { text: 'Getting Started', link: '/getting-started' },
             { text: 'Architecture', link: '/architecture' },
+            { text: 'Database Schema', link: '/database' },
           ],
         },
         {
-          text: 'Configuration',
+          text: 'Core Concepts',
           items: [
-            { text: 'Environment Variables', link: '/environment' },
-            { text: 'Providers (STT/LLM/TTS)', link: '/providers' },
+            { text: 'Authentication', link: '/authentication' },
+            { text: 'Providers', link: '/providers' },
+            { text: 'Plans & Billing', link: '/plans-and-billing' },
           ],
         },
         {
-          text: 'Integration',
+          text: 'Frontend',
           items: [
+            { text: 'Frontend Architecture', link: '/frontend' },
+          ],
+        },
+        {
+          text: 'API Reference',
+          items: [
+            { text: 'REST API', link: '/rest-api' },
             { text: 'WebSocket API', link: '/websocket-api' },
             { text: 'Client Integration', link: '/client-integration' },
             { text: 'Twilio (Phone)', link: '/twilio' },
           ],
         },
         {
-          text: 'Production',
+          text: 'Operations',
           items: [
+            { text: 'Environment Variables', link: '/environment' },
             { text: 'Deployment', link: '/deployment' },
-            { text: 'Pricing & Costs', link: '/pricing' },
+            { text: 'Admin Scripts', link: '/admin-scripts' },
           ],
         },
       ],

@@ -8,38 +8,40 @@ Production deployment guide for Voicex.
 
 ```mermaid
 graph TB
-    subgraph Internet ["🌐 Internet"]
-        USERS["👥 Users / Clients<br/><small>Browser, Mobile, Twilio</small>"]
+    subgraph Internet ["Internet"]
+        USERS["Users / Clients<br/><small>Browser, Mobile, Twilio</small>"]
     end
 
     subgraph Edge ["Edge Layer"]
-        SSL["🔒 SSL Termination"]
-        LB["⚖️ Load Balancer<br/><small>Nginx / AWS ALB / Cloudflare</small>"]
+        SSL["SSL Termination"]
+        LB["Load Balancer<br/><small>Nginx / AWS ALB / Cloudflare</small>"]
     end
 
-    subgraph Compute ["Compute Cluster"]
-        direction LR
-        B1["🖥️ Backend 1<br/><small>:3001</small>"]
-        B2["🖥️ Backend 2<br/><small>:3001</small>"]
-        B3["🖥️ Backend N<br/><small>:3001</small>"]
+    subgraph Frontend_Cluster ["Frontend"]
+        FE["Next.js<br/><small>Static/SSR</small>"]
+    end
+
+    subgraph Compute ["Backend Cluster"]
+        B1["Backend 1<br/><small>:3001</small>"]
+        B2["Backend 2<br/><small>:3001</small>"]
+        B3["Backend N<br/><small>:3001</small>"]
     end
 
     subgraph Data ["Data Layer"]
-        direction LR
-        REDIS["⚡ Redis<br/><small>Rate limits · Sessions<br/>Conversation history</small>"]
-        MONGO["🗄️ MongoDB<br/><small>Usage tracking<br/>Billing · Analytics</small>"]
+        REDIS["Redis<br/><small>Plan cache · Rate limits<br/>Conversation history</small>"]
+        MONGO["MongoDB<br/><small>Orgs · Agents · Providers<br/>Plans · Calls · Usage</small>"]
     end
 
     subgraph AI ["AI Provider APIs"]
-        direction LR
-        DG["🎙️ Deepgram<br/><small>STT (Nova-2)</small>"]
-        GRQ["🧠 Groq / OpenAI<br/><small>LLM</small>"]
-        EL["🗣️ ElevenLabs / OpenAI<br/><small>TTS</small>"]
+        DG["Deepgram STT"]
+        GRQ["Groq / OpenAI LLM"]
+        EL["ElevenLabs / OpenAI TTS"]
     end
 
     USERS -->|"HTTPS / WSS"| SSL
     SSL --> LB
-    LB -->|"sticky sessions<br/><small>(ip_hash / cookie)</small>"| B1
+    LB --> FE
+    LB -->|"sticky sessions"| B1
     LB -->|"sticky sessions"| B2
     LB -->|"sticky sessions"| B3
 
@@ -51,74 +53,9 @@ graph TB
     B2 <--> MONGO
     B3 <--> MONGO
 
-    B1 -->|"WebSocket"| DG
+    B1 --> DG
     B1 --> GRQ
     B1 --> EL
-    B2 --> DG
-    B2 --> GRQ
-    B2 --> EL
-
-    style Internet fill:#1a1a2e,stroke:#e0e0e0,color:#e0e0e0
-    style Edge fill:#f39c1220,stroke:#f39c12,color:#e0e0e0
-    style Compute fill:#0f3460,stroke:#3498db,color:#e0e0e0
-    style Data fill:#c0392b20,stroke:#e74c3c,color:#e0e0e0
-    style AI fill:#8e44ad20,stroke:#9b59b6,color:#e0e0e0
-    style USERS fill:#3498db,stroke:#3498db,color:#fff
-    style SSL fill:#f39c12,stroke:#f39c12,color:#fff
-    style LB fill:#f39c12,stroke:#f39c12,color:#fff
-    style B1 fill:#2980b9,stroke:#2980b9,color:#fff
-    style B2 fill:#2980b9,stroke:#2980b9,color:#fff
-    style B3 fill:#2980b9,stroke:#2980b9,color:#fff
-    style REDIS fill:#e74c3c,stroke:#e74c3c,color:#fff
-    style MONGO fill:#27ae60,stroke:#27ae60,color:#fff
-    style DG fill:#9b59b6,stroke:#9b59b6,color:#fff
-    style GRQ fill:#9b59b6,stroke:#9b59b6,color:#fff
-    style EL fill:#9b59b6,stroke:#9b59b6,color:#fff
-```
-
----
-
-## Request Flow
-
-How a single voice session flows through the production stack:
-
-```mermaid
-sequenceDiagram
-    participant C as 👤 Client
-    participant LB as ⚖️ Load Balancer
-    participant B as 🖥️ Backend
-    participant R as ⚡ Redis
-    participant DG as 🎙️ Deepgram
-    participant LLM as 🧠 Groq
-    participant TTS as 🗣️ ElevenLabs
-
-    C->>LB: WSS connect
-    LB->>B: Sticky route (ip_hash)
-    B->>R: Check rate limit
-    R-->>B: OK
-    B->>B: Validate API key / JWT
-
-    Note over B: Session created
-
-    B->>DG: Open STT stream
-    B->>R: Init conversation history
-
-    loop Voice conversation
-        C->>B: PCM audio (base64)
-        B->>DG: Forward audio
-        DG-->>B: Transcript
-        B->>R: Load history
-        R-->>B: Context
-        B->>LLM: Prompt + context
-        LLM-->>B: Token stream
-        B->>TTS: Sentence text
-        TTS-->>B: MP3 audio
-        B->>C: Audio (base64)
-        B->>R: Save to history
-    end
-
-    C->>B: Disconnect
-    B->>DG: Close STT stream
 ```
 
 ---
@@ -129,32 +66,32 @@ sequenceDiagram
 NODE_ENV=production
 PORT=3001
 
-# ─── Required ───────────────────
+# ─── Required ────────────────────
 DEEPGRAM_API_KEY=your_key
-LLM_PROVIDER=groq
+MONGODB_URI=mongodb+srv://user:pass@cluster.mongodb.net/voicex
+JWT_SECRET=your_production_min_32_char_secret
+ENCRYPTION_KEY=your_64_char_hex_key
+
+# ─── LLM + TTS (for global providers) ────
 GROQ_API_KEY=your_key
+OPENAI_API_KEY=your_key
 ELEVENLABS_API_KEY=your_key
 
-# ─── Auth ───────────────────────
-API_KEYS=sk_live_client1,sk_live_client2
-JWT_SECRET=your_min_32_char_secret_here
-JWT_EXPIRES_IN=1h
-
-# ─── Database ───────────────────
-MONGODB_URI=mongodb+srv://user:pass@cluster.mongodb.net/voicex
-MONGODB_MAX_POOL_SIZE=50
+# ─── Infrastructure ─────────────
 REDIS_URL=redis://your-redis:6379
-
-# ─── Security ──────────────────
 CORS_ORIGIN=https://your-frontend.com
 
-# ─── Twilio (optional) ─────────
+# ─── Twilio (optional) ──────────
 TWILIO_APP_URL=https://api.your-domain.com
 ```
+
+See [Environment Variables](./environment) for the full reference.
 
 ---
 
 ## Build & Run
+
+### Backend
 
 ```bash
 cd backend
@@ -163,11 +100,28 @@ pnpm run build
 node dist/index.js
 ```
 
+### Frontend
+
+```bash
+cd frontend
+pnpm install --frozen-lockfile
+pnpm run build
+pnpm start
+```
+
+### Seed Database (First Deploy)
+
+```bash
+bash scripts/seed-plans.sh
+bash scripts/seed-global-providers.sh
+bash scripts/seed.sh
+```
+
 ---
 
 ## Docker
 
-### Dockerfile
+### Backend Dockerfile
 
 ```dockerfile
 FROM node:20-slim
@@ -179,16 +133,29 @@ EXPOSE 3001
 CMD ["node", "dist/index.js"]
 ```
 
-### Docker Compose (full stack)
+### Docker Compose (Full Stack)
 
 ```yaml
 version: '3.9'
 services:
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    ports:
+      - '3000:3000'
+    environment:
+      - NEXT_PUBLIC_API_URL=http://backend:3001/api
+    depends_on:
+      - backend
+
   backend:
-    build: .
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
     ports:
       - '3001:3001'
-    env_file: .env
+    env_file: backend/.env.local
     depends_on:
       - redis
       - mongo
@@ -225,45 +192,19 @@ docker compose up -d
 
 ## Scaling
 
-### Scaling Strategy
-
-```mermaid
-flowchart TD
-    START["Single Instance<br/><small>1 backend, in-memory</small>"] --> Q1{"Need more\ncapacity?"}
-    Q1 -->|"Yes"| REDIS_ADD["Add Redis<br/><small>Set REDIS_URL</small>"]
-    REDIS_ADD --> Q2{"Need even\nmore?"}
-    Q2 -->|"Yes"| MULTI["Multiple Instances<br/><small>Behind load balancer</small>"]
-    MULTI --> LB_CFG["Configure sticky sessions<br/><small>ip_hash or cookie affinity</small>"]
-    LB_CFG --> Q3{"Need global\nscale?"}
-    Q3 -->|"Yes"| REGIONS["Multi-region<br/><small>Deploy close to users<br/>+ close to Deepgram/Groq</small>"]
-
-    Q1 -->|"No"| DONE1["✅ You're good"]
-    Q2 -->|"No"| DONE2["✅ You're good"]
-    Q3 -->|"No"| DONE3["✅ You're good"]
-
-    style START fill:#3498db,stroke:#3498db,color:#fff
-    style REDIS_ADD fill:#e74c3c,stroke:#e74c3c,color:#fff
-    style MULTI fill:#2980b9,stroke:#2980b9,color:#fff
-    style LB_CFG fill:#f39c12,stroke:#f39c12,color:#fff
-    style REGIONS fill:#9b59b6,stroke:#9b59b6,color:#fff
-    style DONE1 fill:#27ae60,stroke:#27ae60,color:#fff
-    style DONE2 fill:#27ae60,stroke:#27ae60,color:#fff
-    style DONE3 fill:#27ae60,stroke:#27ae60,color:#fff
-```
-
 ### Requirements for Horizontal Scaling
 
-| Requirement         | Why                                                          | Config                        |
-| ------------------- | ------------------------------------------------------------ | ----------------------------- |
-| **Sticky sessions** | WebSocket connections must stay on the same instance         | Nginx `ip_hash` or ALB cookie |
-| **Redis**           | Rate limits and conversation history shared across instances | Set `REDIS_URL`               |
-| **MongoDB**         | Usage tracking and billing shared across instances           | Set `MONGODB_URI`             |
-| **Health checks**   | Load balancer needs to detect unhealthy instances            | `GET /api/health`             |
+| Requirement | Why | Config |
+|-------------|-----|--------|
+| **Sticky sessions** | WebSocket connections must stay on the same instance | Nginx `ip_hash` or ALB cookie |
+| **Redis** | Rate limits, plan cache, and conversation history shared across instances | Set `REDIS_URL` |
+| **MongoDB** | All persistent data shared across instances | Set `MONGODB_URI` |
+| **Health checks** | Load balancer needs to detect unhealthy instances | `GET /api/health` |
 
 ### Nginx Configuration
 
 ```nginx
-upstream voicex {
+upstream voicex_backend {
     ip_hash;
     server backend1:3001;
     server backend2:3001;
@@ -278,7 +219,7 @@ server {
     ssl_certificate_key /etc/ssl/private/your-key.pem;
 
     location / {
-        proxy_pass http://voicex;
+        proxy_pass http://voicex_backend;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
@@ -290,7 +231,7 @@ server {
     }
 
     location /api/health {
-        proxy_pass http://voicex;
+        proxy_pass http://voicex_backend;
         proxy_read_timeout 5s;
     }
 }
@@ -304,13 +245,8 @@ server {
 GET /api/health
 ```
 
-Returns:
-
 ```json
-{
-  "status": "ok",
-  "timestamp": 1708185600000
-}
+{ "status": "ok", "timestamp": 1708185600000 }
 ```
 
 Use for load balancer health checks and Kubernetes liveness/readiness probes.
@@ -319,83 +255,67 @@ Use for load balancer health checks and Kubernetes liveness/readiness probes.
 
 ## Monitoring
 
-### Key Metrics
+### Key Metrics to Watch
 
-```mermaid
-graph LR
-    subgraph Metrics ["📊 What to Monitor"]
-        direction TB
-        M1["🔌 WebSocket connections<br/><small>Active voice sessions</small>"]
-        M2["⏱️ Pipeline latency<br/><small>End-to-end turn time</small>"]
-        M3["🧠 LLM latency<br/><small>Time to first token</small>"]
-        M4["🗣️ TTS errors<br/><small>Failed audio generations</small>"]
-        M5["🎙️ STT connection<br/><small>Deepgram open/close events</small>"]
-        M6["💾 Redis health<br/><small>Connection pool + latency</small>"]
-    end
+| Metric | Source | Why |
+|--------|--------|-----|
+| WebSocket connections | Server logs | Active voice sessions |
+| Pipeline latency | `Pipeline finished { elapsed }` log | End-to-end turn time |
+| LLM latency | `LLM done { llmMs }` log | Time to first token |
+| TTS failures | `TTS failed` log | Audio generation errors |
+| STT connection status | `Deepgram connection opened/closed` | STT health |
+| Redis latency | Redis client | Cache performance |
+| MongoDB query time | MongoDB profiler | DB performance |
 
-    subgraph Logs ["📝 Log Lines to Watch"]
-        direction TB
-        L1["Pipeline finished { elapsed }"]
-        L2["LLM done { llmMs }"]
-        L3["TTS failed for chunk"]
-        L4["Deepgram connection opened"]
-        L5["Deepgram connection closed"]
-        L6["Session created / destroyed"]
-    end
-
-    M1 ~~~ L6
-    M2 ~~~ L1
-    M3 ~~~ L2
-    M4 ~~~ L3
-    M5 ~~~ L4
-
-    style Metrics fill:#0f3460,stroke:#3498db,color:#e0e0e0
-    style Logs fill:#1a1a2e,stroke:#e0e0e0,color:#e0e0e0
-```
-
-**Recommended stack:** Pino JSON logs → Fluentd/Vector → Elasticsearch/Loki → Grafana
+**Recommended logging stack:** Pino JSON logs → Fluentd/Vector → Elasticsearch/Loki → Grafana
 
 ---
 
 ## Production Checklist
 
-```mermaid
-flowchart LR
-    subgraph Security ["🔐 Security"]
-        S1["API_KEYS set"]
-        S2["JWT_SECRET ≥ 32 chars"]
-        S3["CORS_ORIGIN set"]
-        S4["SSL enabled"]
-    end
-
-    subgraph Infra ["🏗️ Infrastructure"]
-        I1["NODE_ENV=production"]
-        I2["Redis connected"]
-        I3["MongoDB connected"]
-        I4["Sticky sessions enabled"]
-    end
-
-    subgraph Ops ["📡 Operations"]
-        O1["/api/health monitored"]
-        O2["Log aggregation set up"]
-        O3["Alerts on TTS failures"]
-        O4["Backup strategy for MongoDB"]
-    end
-
-    style Security fill:#e74c3c20,stroke:#e74c3c,color:#e0e0e0
-    style Infra fill:#3498db20,stroke:#3498db,color:#e0e0e0
-    style Ops fill:#27ae6020,stroke:#27ae60,color:#e0e0e0
-```
+### Security
 
 - [ ] Set `NODE_ENV=production`
-- [ ] Set `API_KEYS` (don't leave auth open)
-- [ ] Set `JWT_SECRET` (min 32 chars)
+- [ ] Set `JWT_SECRET` (min 32 chars, cryptographically random)
+- [ ] Set `ENCRYPTION_KEY` (64-char hex, cryptographically random)
 - [ ] Set `CORS_ORIGIN` to your frontend domain
-- [ ] Set `MONGODB_URI` for session/usage tracking
-- [ ] Set `REDIS_URL` for distributed rate limiting
-- [ ] Configure SSL termination at load balancer
-- [ ] Enable sticky sessions for WebSocket
-- [ ] Set up log aggregation (backend uses Pino JSON logging)
-- [ ] Monitor `/api/health` endpoint
-- [ ] Set up alerts for TTS failures and high latency
-- [ ] Configure auto-scaling based on WebSocket connection count
+- [ ] SSL/TLS enabled at load balancer
+- [ ] API keys use database-backed keys (not env `API_KEYS`)
+
+### Infrastructure
+
+- [ ] MongoDB connected (with connection pooling)
+- [ ] Redis connected (for distributed operations)
+- [ ] Sticky sessions enabled for WebSocket
+- [ ] Health check monitoring (`GET /api/health`)
+
+### Data
+
+- [ ] Plans seeded (`bash scripts/seed-plans.sh`)
+- [ ] Global providers seeded (`bash scripts/seed-global-providers.sh`)
+- [ ] Provider registry seeded (`bash scripts/seed.sh`)
+- [ ] MongoDB indexes created (automatic on startup)
+
+### Operations
+
+- [ ] Log aggregation configured (Pino JSON logging)
+- [ ] Alerts on TTS failures and high latency
+- [ ] MongoDB backup strategy
+- [ ] Auto-scaling based on WebSocket connection count
+- [ ] Redis persistence configured (AOF or RDB)
+
+---
+
+## Graceful Shutdown
+
+The backend handles `SIGTERM` and `SIGINT`:
+
+1. Close all WebSocket connections
+2. Close HTTP server (stop accepting new connections)
+3. Close MongoDB connection
+4. Close Redis connections
+5. Exit process
+
+**Timeout:** 10 seconds. If shutdown takes longer, the process is force-killed.
+
+This ensures clean container restarts in Docker/Kubernetes environments.

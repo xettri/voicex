@@ -1,149 +1,300 @@
 # Client Integration
 
-How to integrate Voicex into your app or connect Twilio phone numbers.
+How to integrate Voicex voice AI into your application — from your backend or frontend.
+
+---
 
 ## Overview
 
-- **Your API keys:** You (Voicex) issue API keys to clients
-- **Client's Twilio:** Clients use their own Twilio account and phone numbers
-- **You provide:** AI (STT, LLM, TTS). Clients pay Twilio for calls; they pay you for AI usage
+Voicex provides two integration methods:
+
+| Method | Use Case | Transport |
+|--------|----------|-----------|
+| **WebSocket** | Browser/app voice | Direct WebSocket to `/ws/voice` |
+| **Twilio webhook** | Phone calls | Twilio → webhook → Media Streams |
+
+**Authentication:** Clients authenticate with API keys created via the dashboard.
 
 ---
 
-## Authentication
+## Getting an API Key
 
-### Option A: API Key (Direct)
+1. Sign in to the dashboard at `https://your-voicex.com`
+2. Go to **Settings** → **API Keys**
+3. Click **Create API Key**
+4. Copy the key (shown only once): `vx_a1b2c3d4e5f6...`
 
-Use the API key in the URL:
+---
 
-```
-ws://localhost:3001/ws/voice?api_key=YOUR_API_KEY
-```
+## Browser Voice Integration (WebSocket)
 
-For Twilio webhook:
+### Step 1: Connect
 
-```
-http://localhost:3001/api/twilio/voice?api_key=YOUR_API_KEY
-```
+```javascript
+const API_KEY = 'vx_a1b2c3d4e5f6...';
+const AGENT_ID = '664a...';  // optional, uses default agent if omitted
+const SESSION_ID = localStorage.getItem('voicex_session_id');
 
-### Option B: JWT Token (Recommended)
+const params = new URLSearchParams({ api_key: API_KEY });
+if (AGENT_ID) params.set('agent_id', AGENT_ID);
+if (SESSION_ID) params.set('session_id', SESSION_ID);
 
-Get a short-lived token, then use it:
-
-**Request token:**
-
-```bash
-curl -X POST http://localhost:3001/api/auth/token \
-  -H "Content-Type: application/json" \
-  -d '{"api_key": "YOUR_API_KEY"}'
+const ws = new WebSocket(`wss://api.your-voicex.com/ws/voice?${params}`);
 ```
 
-**Response:**
+### Step 2: Handle Messages
 
-```json
-{
-  "token": "eyJhbGciOiJIUzI1NiIs...",
-  "expires_in": 3600,
-  "token_type": "Bearer"
+```javascript
+const audioContext = new AudioContext({ sampleRate: 24000 });
+
+ws.onmessage = async (event) => {
+  // Binary frames = audio
+  if (event.data instanceof Blob || event.data instanceof ArrayBuffer) {
+    const buffer = event.data instanceof Blob
+      ? await event.data.arrayBuffer()
+      : event.data;
+    const decoded = await audioContext.decodeAudioData(buffer);
+    const source = audioContext.createBufferSource();
+    source.buffer = decoded;
+    source.connect(audioContext.destination);
+    source.start(0);
+    return;
+  }
+
+  // JSON frames = control messages
+  const msg = JSON.parse(event.data);
+
+  switch (msg.type) {
+    case 'connected':
+      console.log('Connected to agent:', msg.agentName);
+      localStorage.setItem('voicex_session_id', msg.historyKey);
+      startMicrophone();
+      break;
+
+    case 'transcript':
+      const { role, text, isFinal } = msg.payload;
+      updateTranscript(role, text, isFinal);
+      break;
+
+    case 'audioStop':
+      stopAllAudio();  // user interrupted
+      break;
+
+    case 'audioEnd':
+      // assistant finished speaking
+      break;
+
+    case 'error':
+      console.error('Voicex error:', msg.payload.message);
+      break;
+  }
+};
+```
+
+### Step 3: Capture and Send Microphone Audio
+
+```javascript
+async function startMicrophone() {
+  const stream = await navigator.mediaDevices.getUserMedia({
+    audio: {
+      channelCount: 1,
+      sampleRate: 16000,
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true,
+    }
+  });
+
+  const context = new AudioContext({ sampleRate: 16000 });
+  const source = context.createMediaStreamSource(stream);
+
+  // Use ScriptProcessorNode (simpler) or AudioWorklet (better)
+  const processor = context.createScriptProcessor(4096, 1, 1);
+  source.connect(processor);
+  processor.connect(context.destination);
+
+  processor.onaudioprocess = (e) => {
+    if (ws.readyState !== WebSocket.OPEN) return;
+
+    const float32 = e.inputBuffer.getChannelData(0);
+    const pcm16 = new Int16Array(float32.length);
+    for (let i = 0; i < float32.length; i++) {
+      pcm16[i] = Math.max(-32768, Math.min(32767, Math.round(float32[i] * 32767)));
+    }
+    ws.send(pcm16.buffer);
+  };
 }
 ```
 
-**Use token:**
+### Audio Format
 
-```
-ws://localhost:3001/ws/voice?token=eyJhbGciOiJIUzI1NiIs...
-```
-
-::: tip
-Tokens expire (default 1h). Refresh before expiry. API keys don't expire but are long-lived secrets — don't expose them in client-side code.
-:::
+| Direction | Format | Sample Rate | Encoding |
+|-----------|--------|-------------|----------|
+| Client → Server | PCM 16-bit | 16kHz mono | Raw binary |
+| Server → Client | MP3 | 24kHz | Binary (one MP3 per sentence) |
 
 ---
 
-## WebSocket (Browser / App)
+## REST API Integration
 
-For in-app voice (web or mobile):
+Use the REST API for managing agents, calls, and settings programmatically.
 
-```javascript
-// 1. Get token
-const res = await fetch('http://localhost:3001/api/auth/token', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ api_key: 'YOUR_API_KEY' }),
-});
-const { token } = await res.json();
+### Authentication
 
-// 2. Connect WebSocket
-const sessionId = localStorage.getItem('voicex_session_id') ?? crypto.randomUUID();
-const ws = new WebSocket(`ws://localhost:3001/ws/voice?token=${token}&session_id=${sessionId}`);
-
-// 3. Handle messages
-ws.onmessage = (e) => {
-  const msg = JSON.parse(e.data);
-  if (msg.type === 'connected' && msg.historyKey) {
-    localStorage.setItem('voicex_session_id', msg.historyKey);
-  }
-  if (msg.type === 'transcript') console.log(msg.payload.role, msg.payload.text);
-  if (msg.type === 'audio') playAudio(msg.payload);
-  if (msg.type === 'audioStop') stopAudio();
-  if (msg.type === 'error') console.error(msg.payload.message);
-};
-
-// 4. Send microphone audio (base64 PCM 16kHz)
-ws.send(JSON.stringify({ type: 'audio', payload: base64Chunk }));
+```bash
+# Using API key header
+curl -H "x-api-key: vx_a1b2c3d4e5f6..." \
+  https://api.your-voicex.com/api/dashboard/agents
 ```
 
-See [WebSocket API](./websocket-api) for full protocol details.
+### Common Operations
+
+**List agents:**
+
+```bash
+curl -H "x-api-key: vx_..." \
+  https://api.your-voicex.com/api/dashboard/agents
+```
+
+**Get org stats:**
+
+```bash
+curl -H "x-api-key: vx_..." \
+  https://api.your-voicex.com/api/dashboard/stats
+```
+
+**List recent calls:**
+
+```bash
+curl -H "x-api-key: vx_..." \
+  "https://api.your-voicex.com/api/dashboard/calls?limit=10"
+```
+
+**Get call transcript:**
+
+```bash
+curl -H "x-api-key: vx_..." \
+  https://api.your-voicex.com/api/dashboard/calls/CALL_ID
+```
+
+See [REST API Reference](./rest-api) for all endpoints.
 
 ---
 
 ## Twilio Integration (Phone Calls)
 
-Clients use their own Twilio account. No need to share Twilio keys with you.
+Clients use their own Twilio account. No need to share Twilio keys with Voicex.
 
-### Step 1: Get API key
+### Step 1: Get API Key
 
-You issue an API key (e.g. `sk_live_abc123`) to the client.
+Get a `vx_...` API key from the Voicex dashboard.
 
-### Step 2: Configure Twilio webhook
+### Step 2: Configure Twilio Webhook
 
 In [Twilio Console](https://console.twilio.com) → Phone Numbers → Voice Configuration:
 
 - **A call comes in:** Webhook
-- **URL:** `http://localhost:3001/api/twilio/voice?api_key=sk_live_abc123`
+- **URL:** `https://api.your-voicex.com/api/twilio/voice?api_key=vx_a1b2c3d4e5f6...`
+- **Method:** POST
 
-### Step 3: Flow
+### Step 3: Call Flow
 
-1. Caller dials the Twilio number
-2. Twilio POSTs to your webhook URL (with `api_key` in the URL)
-3. Server validates the key and returns TwiML for Media Streams
-4. Twilio streams audio → STT → LLM → TTS → audio streamed back
-5. Caller hears the AI assistant
+```
+Caller → Twilio → POST /api/twilio/voice → TwiML (Media Stream)
+                                         ↓
+                              /ws/twilio/stream (WebSocket)
+                                         ↓
+                           STT → LLM → TTS → Caller hears AI
+```
 
----
-
-## API Reference
-
-| Endpoint            | Method    | Auth                     | Description          |
-| ------------------- | --------- | ------------------------ | -------------------- |
-| `/api/health`       | GET       | None                     | Health check         |
-| `/api/auth/token`   | POST      | api_key (body or Bearer) | Get JWT token        |
-| `/api/twilio/voice` | POST      | api_key or token (query) | Twilio webhook       |
-| `/ws/voice`         | WebSocket | api_key or token (query) | Browser voice        |
-| `/ws/twilio/stream` | WebSocket | api_key or token (query) | Twilio Media Streams |
+See [Twilio Setup](./twilio) for detailed instructions.
 
 ---
 
-## Server Configuration
+## Agent Selection
 
-```bash
-# API keys you issue to clients (comma-separated)
-API_KEYS=sk_live_client1,sk_live_client2
+### Specific Agent
 
-# Required for token API
-JWT_SECRET=min_32_characters_secret_here
-JWT_EXPIRES_IN=1h
+Pass `agent_id` as a query parameter:
 
-# Public URL for Twilio TwiML
-TWILIO_APP_URL=http://localhost:3001
+```
+ws://host/ws/voice?api_key=vx_...&agent_id=664a1234abcd...
+```
+
+### Default Agent
+
+If `agent_id` is omitted, the system uses the org's first active agent (sorted by creation date).
+
+### Multiple Agents
+
+Create multiple agents via the dashboard for different use cases:
+
+- Sales bot (aggressive persona, fast responses)
+- Support bot (patient persona, detailed answers)
+- Receptionist (greeting-focused, call routing)
+
+Each agent has its own:
+- System prompt and persona
+- LLM model and temperature
+- TTS voice and speed
+- Interruption sensitivity and silence thresholds
+
+---
+
+## Session Persistence
+
+Conversations persist across reconnections:
+
+1. First connection: server returns `historyKey` in the `connected` message
+2. Save this key (e.g., in localStorage or your session store)
+3. On reconnect: pass it as `session_id` query param
+4. Server loads previous messages from Redis (24h TTL)
+5. AI continues the conversation with full context
+
+```javascript
+// Save on first connect
+const historyKey = connectedMsg.historyKey;
+
+// Use on subsequent connections
+const ws = new WebSocket(`wss://host/ws/voice?api_key=vx_...&session_id=${historyKey}`);
+```
+
+---
+
+## Error Handling
+
+### WebSocket Close Codes
+
+| Code | Meaning | Action |
+|------|---------|--------|
+| 4001 | Unauthorized | Check API key |
+| 4003 | Model not allowed | Agent uses a model above your plan |
+| 4004 | Provider not found/inactive | A provider is disabled |
+| 4005 | Agent not found | Invalid agent_id |
+| 4029 | Rate limited (30/min) | Back off and retry |
+| 1000 | Normal close | Clean disconnect |
+
+### Reconnection Strategy
+
+Implement exponential backoff:
+
+```javascript
+let attempts = 0;
+const MAX_ATTEMPTS = 3;
+
+function connect() {
+  const ws = new WebSocket(url);
+
+  ws.onopen = () => { attempts = 0; };
+
+  ws.onclose = (event) => {
+    if (event.code === 4001) return; // don't retry auth errors
+
+    if (attempts < MAX_ATTEMPTS) {
+      const delay = Math.min(1000 * Math.pow(2, attempts), 10000);
+      attempts++;
+      setTimeout(connect, delay);
+    }
+  };
+}
 ```

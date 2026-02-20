@@ -9,26 +9,30 @@ interface TranscriptDisplayProps {
 export function TranscriptDisplay({ messages }: TranscriptDisplayProps) {
   if (messages.length === 0) {
     return (
-      <p className="text-gray-500 text-sm text-center py-8">Speak to see transcript here...</p>
+      <p className="text-gray-400 text-sm text-center py-8">Speak to see transcript here...</p>
     );
   }
 
   return (
-    <div className="space-y-2 max-h-48 overflow-y-auto">
-      {messages.map((m, i) => (
-        <p
-          key={i}
-          className={`text-sm ${
-            m.role === 'assistant'
-              ? 'text-blue-700 font-medium'
-              : m.isFinal
-                ? 'text-gray-900 font-medium'
-                : 'text-gray-500 italic'
-          }`}
-        >
-          {m.text}
-        </p>
-      ))}
+    <div className="space-y-2">
+      {messages.map((m, i) => {
+        const isAssistant = m.role === 'assistant';
+        return (
+          <div key={i} className={`flex ${isAssistant ? 'justify-start' : 'justify-end'}`}>
+            <div
+              className={`max-w-[85%] px-3.5 py-2 rounded-2xl text-sm leading-relaxed ${
+                isAssistant
+                  ? 'bg-white text-gray-800 border border-gray-200 rounded-bl-sm shadow-xs'
+                  : m.isFinal
+                    ? 'bg-blue-600 text-white rounded-br-sm'
+                    : 'bg-blue-400/60 text-white rounded-br-sm italic'
+              }`}
+            >
+              {m.text}
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }

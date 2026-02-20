@@ -1,49 +1,54 @@
 # Environment Variables
 
-All configuration is done through environment variables. The backend reads from `backend/.env` and `backend/.env.local` (local overrides).
+All backend configuration is done through environment variables. The backend reads from `backend/.env` and `backend/.env.local` (local overrides).
+
+Frontend variables go in `frontend/.env.local`.
 
 ---
 
-## Required
+## Backend Variables
 
-| Variable           | Description            | Get it at                                             |
-| ------------------ | ---------------------- | ----------------------------------------------------- |
+### Required
+
+| Variable | Description | Get it at |
+|----------|-------------|-----------|
 | `DEEPGRAM_API_KEY` | Speech-to-text API key | [console.deepgram.com](https://console.deepgram.com/) |
+| `MONGODB_URI` | MongoDB connection string | Local, Docker, or [Atlas](https://cloud.mongodb.com) |
+| `JWT_SECRET` | JWT signing key (min 32 chars) | Generate a strong random string |
+| `ENCRYPTION_KEY` | AES-256 key for provider credentials (64-char hex) | See below |
 
-Plus at least one LLM provider (see below).
+**Generate ENCRYPTION_KEY:**
 
----
-
-## LLM Provider
-
-| Variable          | Default                  | Description                                                         |
-| ----------------- | ------------------------ | ------------------------------------------------------------------- |
-| `LLM_PROVIDER`    | `ollama`                 | Which LLM to use: `groq`, `openai`, or `ollama`                     |
-| `GROQ_API_KEY`    | —                        | Groq API key. [console.groq.com](https://console.groq.com/)         |
-| `OPENAI_API_KEY`  | —                        | OpenAI API key. [platform.openai.com](https://platform.openai.com/) |
-| `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama server URL                                                   |
-
-**Selection logic:** Uses the provider set by `LLM_PROVIDER`. Falls back to whichever key is available: OpenAI → Groq → Ollama.
-
-**Models used:**
-| Provider | Model | Latency |
-|----------|-------|---------|
-| Groq | `llama-3.1-8b-instant` | ~200ms first token |
-| OpenAI | `gpt-4o-mini` | ~500ms first token |
-| Ollama | `llama3.2:3b` | 1-3s first token |
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
 
 ---
 
-## TTS Provider
+### LLM Provider
 
-| Variable             | Default | Description                                                 |
-| -------------------- | ------- | ----------------------------------------------------------- |
-| `ELEVENLABS_API_KEY` | —       | ElevenLabs API key. [elevenlabs.io](https://elevenlabs.io/) |
-| `OPENAI_API_KEY`     | —       | Also used for OpenAI TTS if set                             |
-| `SYSTEM_TTS_CMD`     | —       | System command for local TTS (see below)                    |
-| `SYSTEM_TTS_EXT`     | —       | Output file extension for system TTS                        |
+At least one LLM provider is needed.
 
-**Selection priority:** System TTS → ElevenLabs → OpenAI → Edge TTS (dev fallback only).
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `GROQ_API_KEY` | — | Groq API key. [console.groq.com](https://console.groq.com/) |
+| `OPENAI_API_KEY` | — | OpenAI API key. [platform.openai.com](https://platform.openai.com/) |
+| `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama server URL (free, local) |
+
+These are used by the `seed-global-providers.sh` script to populate global provider credentials.
+
+---
+
+### TTS Provider
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ELEVENLABS_API_KEY` | — | ElevenLabs API key. [elevenlabs.io](https://elevenlabs.io/) |
+| `OPENAI_API_KEY` | — | Also used for OpenAI TTS if set |
+| `SYSTEM_TTS_CMD` | — | System command for local TTS |
+| `SYSTEM_TTS_EXT` | — | Output file extension for system TTS |
+
+If no TTS key is set, **Edge TTS** is used as a free fallback (dev/testing only).
 
 **System TTS examples:**
 
@@ -57,88 +62,125 @@ SYSTEM_TTS_CMD=espeak,-w,{out},{text}
 SYSTEM_TTS_EXT=wav
 ```
 
-> **Tip:** For production, use ElevenLabs (best quality) or OpenAI TTS. Edge TTS uses an unofficial endpoint with no SLA — only suitable for dev/testing.
+---
+
+### Server
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `NODE_ENV` | `development` | `development`, `production`, or `test` |
+| `PORT` | `3001` | Backend HTTP/WS server port |
+| `LOG_LEVEL` | — | Pino log level: `trace`, `debug`, `info`, `warn`, `error` |
+| `CORS_ORIGIN` | `*` | Allowed CORS origin. Set to your frontend URL in production |
 
 ---
 
-## Server
+### Authentication
 
-| Variable      | Default       | Description                                                 |
-| ------------- | ------------- | ----------------------------------------------------------- |
-| `NODE_ENV`    | `development` | `development`, `production`, or `test`                      |
-| `PORT`        | `3001`        | Backend HTTP/WS server port                                 |
-| `LOG_LEVEL`   | —             | `trace`, `debug`, `info`, `warn`, or `error`                |
-| `CORS_ORIGIN` | `*`           | Allowed CORS origin. Set to your frontend URL in production |
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `API_KEYS` | — | Comma-separated legacy API keys (for dev fallback) |
+| `JWT_SECRET` | — | **Required.** Secret for signing JWT tokens (min 32 chars) |
+| `JWT_EXPIRES_IN` | `1h` | JWT token expiry. Examples: `1h`, `30m`, `7d` |
 
----
-
-## Authentication
-
-| Variable         | Default | Description                                                                  |
-| ---------------- | ------- | ---------------------------------------------------------------------------- |
-| `API_KEYS`       | —       | Comma-separated API keys for client auth. Example: `key1,key2,key3`          |
-| `JWT_SECRET`     | —       | Secret for signing JWT tokens (min 32 chars). Required for `/api/auth/token` |
-| `JWT_EXPIRES_IN` | `1h`    | JWT token expiry. Examples: `1h`, `30m`, `7d`                                |
-
-> **Note:** If `API_KEYS` is empty, authentication is disabled (open access). Set at least one key in production.
+> **Note:** `API_KEYS` is a legacy env-based auth method. In production, use the database-backed API keys created via the dashboard.
 
 ---
 
-## Database & Cache
+### Database & Cache
 
-| Variable                | Default | Description                                                           |
-| ----------------------- | ------- | --------------------------------------------------------------------- |
-| `MONGODB_URI`           | —       | MongoDB connection string. Enables session tracking and usage metrics |
-| `MONGODB_MAX_POOL_SIZE` | `50`    | MongoDB connection pool size per backend instance                     |
-| `REDIS_URL`             | —       | Redis URL. Enables distributed rate limiting and conversation history |
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MONGODB_URI` | — | **Required.** MongoDB connection string |
+| `MONGODB_MAX_POOL_SIZE` | `100` | MongoDB connection pool size per instance |
+| `REDIS_URL` | — | Redis URL for caching, rate limiting, conversation history |
 
-> **Note:** Both are optional. Without MongoDB, sessions/usage aren't tracked. Without Redis, rate limiting is in-memory (single instance only) and conversation history is in-memory (lost on restart).
-
----
-
-## Twilio (Phone Calls)
-
-| Variable         | Default | Description                                                  |
-| ---------------- | ------- | ------------------------------------------------------------ |
-| `TWILIO_APP_URL` | —       | Your backend's public URL. Example: `https://api.voicex.com` |
-
-Required for Twilio phone call support. See [Twilio Setup](./twilio.md).
+**Redis is optional.** Without it:
+- Rate limiting is in-memory (single instance only)
+- Conversation history is in-memory (lost on restart)
+- Plan cache is in-memory only (no L2 cache)
 
 ---
 
-## Frontend
+### Security
 
-| Variable              | Default                        | Description                                |
-| --------------------- | ------------------------------ | ------------------------------------------ |
-| `NEXT_PUBLIC_WS_URL`  | `ws://localhost:3001/ws/voice` | WebSocket server URL                       |
-| `NEXT_PUBLIC_API_KEY` | —                              | API key to include in WebSocket connection |
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ENCRYPTION_KEY` | Dev fallback | 64-char hex string (32 bytes) for AES-256-GCM encryption |
+
+If not set in development, a deterministic fallback key is derived from a hardcoded string (with a console warning). **Always set in production.**
+
+---
+
+### Twilio (Phone Calls)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `TWILIO_APP_URL` | — | Backend's public URL (e.g., `https://api.voicex.com`) |
+
+Required for Twilio phone call support. See [Twilio Setup](./twilio).
+
+---
+
+## Frontend Variables
 
 Set in `frontend/.env.local`.
 
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `NEXT_PUBLIC_API_URL` | `http://localhost:3001/api` | Backend API base URL |
+| `NEXT_PUBLIC_WS_URL` | `ws://localhost:3001/ws/voice` | WebSocket voice URL |
+| `NEXT_PUBLIC_API_KEY` | — | API key for WebSocket auth (dev convenience) |
+
 ---
 
-## Example: Minimal `.env.local`
+## Example Configurations
+
+### Minimal (Development)
 
 ```bash
+# backend/.env.local
 DEEPGRAM_API_KEY=your_deepgram_key
-LLM_PROVIDER=groq
+MONGODB_URI=mongodb://localhost:27017/voicex
+JWT_SECRET=development_secret_at_least_32_chars
+ENCRYPTION_KEY=a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2
 GROQ_API_KEY=your_groq_key
 ```
 
-This gives you: Deepgram STT + Groq LLM + Edge TTS fallback. Fast and low cost. For production, add `ELEVENLABS_API_KEY` for reliable TTS.
-
----
-
-## Example: Premium `.env.local`
+### Full Production
 
 ```bash
+# backend/.env.local
+NODE_ENV=production
+PORT=3001
+
+# Required
 DEEPGRAM_API_KEY=your_deepgram_key
-LLM_PROVIDER=groq
-GROQ_API_KEY=your_groq_key
-ELEVENLABS_API_KEY=your_elevenlabs_key
-API_KEYS=sk_live_client1,sk_live_client2
-JWT_SECRET=your_min_32_char_secret_here_abc
 MONGODB_URI=mongodb+srv://user:pass@cluster.mongodb.net/voicex
-REDIS_URL=redis://localhost:6379
-CORS_ORIGIN=https://your-app.com
+JWT_SECRET=your_production_min_32_char_secret
+ENCRYPTION_KEY=your_64_char_hex_production_key
+
+# LLM + TTS keys (for global providers)
+GROQ_API_KEY=your_groq_key
+OPENAI_API_KEY=your_openai_key
+ELEVENLABS_API_KEY=your_elevenlabs_key
+
+# Infrastructure
+REDIS_URL=redis://your-redis:6379
+CORS_ORIGIN=https://your-frontend.com
+
+# Twilio (optional)
+TWILIO_APP_URL=https://api.your-domain.com
+```
+
+### Zero-Cost (Dev)
+
+```bash
+# backend/.env.local
+DEEPGRAM_API_KEY=your_key        # $200 free credit
+MONGODB_URI=mongodb://localhost:27017/voicex
+JWT_SECRET=at_least_32_characters_long_secret
+ENCRYPTION_KEY=<generate_64_hex>
+OLLAMA_BASE_URL=http://localhost:11434
+# No TTS key → Edge TTS fallback (dev only)
 ```

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { parseServerMessage } from './ws-types';
 
-function getWsUrl(): string {
+function getWsUrl(agentId?: string): string {
   const base = process.env.NEXT_PUBLIC_WS_URL ?? 'ws://localhost:3001/ws/voice';
   const params = new URLSearchParams();
   const apiKey = process.env.NEXT_PUBLIC_API_KEY;
@@ -11,7 +11,13 @@ function getWsUrl(): string {
   if (typeof window !== 'undefined') {
     const sid = localStorage.getItem('voicex_session_id');
     if (sid) params.set('session_id', sid);
+    // Prefer JWT token for auth, fall back to API key
+    const token = localStorage.getItem('vx_token');
+    const storedKey = localStorage.getItem('vx_api_key');
+    if (token && !apiKey) params.set('token', token);
+    else if (storedKey && !apiKey) params.set('api_key', storedKey);
   }
+  if (agentId) params.set('agent_id', agentId);
   const qs = params.toString();
   return qs ? `${base}${base.includes('?') ? '&' : '?'}${qs}` : base;
 }
@@ -30,6 +36,7 @@ const RECONNECT_DELAY_MS = 2000;
 const MAX_RECONNECT_ATTEMPTS = 3;
 
 export function useVoiceConnection(options?: {
+  agentId?: string;
   onAudioChunk?: (chunk: ArrayBuffer) => void;
   onAudioEnd?: () => void;
   onAudioStop?: () => void;
@@ -68,7 +75,7 @@ export function useVoiceConnection(options?: {
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
 
     setStatus('connecting');
-    const url = getWsUrl();
+    const url = getWsUrl(options?.agentId);
     const ws = new WebSocket(url);
     ws.binaryType = 'arraybuffer';
 
