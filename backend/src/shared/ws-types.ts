@@ -1,13 +1,14 @@
-/** Client → Server WebSocket message types */
+/** Client → Server WebSocket message types (text frames only; binary = raw PCM audio) */
 export type ClientMessage =
   | { type: "audio"; payload: string }
   | { type: "ping" };
 
-/** Server → Client WebSocket message types */
+/** Server → Client WebSocket message types (text frames; binary frames = raw audio) */
 export type ServerMessage =
   | { type: "connected"; sessionId: string; timestamp: number }
   | { type: "transcript"; payload: { text: string; isFinal: boolean; timestamp: number; role?: "user" | "assistant" } }
-  | { type: "audio"; payload: string }
+  | { type: "audioEnd" }
+  | { type: "audioStop" }
   | { type: "pong"; timestamp: number };
 
 export function parseClientMessage(data: string): ClientMessage | null {

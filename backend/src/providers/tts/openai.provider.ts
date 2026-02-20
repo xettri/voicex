@@ -20,6 +20,7 @@ export function createOpenAITTSProvider(apiKey: string): TTSProvider {
           input: text,
           voice: "alloy",
           response_format: "mp3",
+          speed: 1.0,
         }),
         signal,
       });

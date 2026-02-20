@@ -12,11 +12,11 @@ export function createApp(port: number, config: VoiceConfig) {
   const app = createExpressApp(config);
   const server = createServer(app);
 
-  createWebSocketGateway(server, config);
+  const wss = createWebSocketGateway(server, config);
 
   server.listen(port, () => {
     logger.info("Server listening", { port });
   });
 
-  return { server };
+  return { server, wss };
 }

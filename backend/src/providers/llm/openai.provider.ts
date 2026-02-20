@@ -20,8 +20,8 @@ export function createOpenAIProvider(apiKey: string): LLMProvider {
           model: "gpt-4o-mini",
           messages,
           stream: true,
-          max_tokens: 150,
-          temperature: 0.7,
+          max_tokens: 200,
+          temperature: 0.6,
         }),
         signal,
       });

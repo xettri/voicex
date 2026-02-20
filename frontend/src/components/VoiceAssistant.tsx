@@ -8,9 +8,10 @@ import { TranscriptDisplay } from "./TranscriptDisplay";
 
 export function VoiceAssistant() {
   const [error, setError] = useState<string | null>(null);
-  const { enqueue, unlock, clearQueue } = useAudioPlayer();
+  const { enqueueChunk, flushAccumulator, unlock, clearQueue } = useAudioPlayer();
   const { status, transcript, connect, disconnect, sendAudio } = useVoiceConnection({
-    onAudioChunk: enqueue,
+    onAudioChunk: enqueueChunk,
+    onAudioEnd: flushAccumulator,
     onAudioStop: clearQueue,
     onError: (msg) => setError(msg),
   });

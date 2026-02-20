@@ -18,9 +18,10 @@ export function createDeepgramProvider(apiKey: string, options?: DeepgramOptions
         language: "en",
         smart_format: true,
         interim_results: true,
-        endpointing: 300,
-        utterance_end_ms: 1000,
+        endpointing: 200,
+        utterance_end_ms: 700,
         vad_events: true,
+        no_delay: true,
       };
       if (options?.encoding) opts.encoding = options.encoding;
       if (options?.sampleRate) opts.sample_rate = options.sampleRate;
@@ -28,15 +29,12 @@ export function createDeepgramProvider(apiKey: string, options?: DeepgramOptions
       const live = deepgram.listen.live(opts);
 
       let finalizedText = "";
-      let connected = false;
 
       live.on(LiveTranscriptionEvents.Open, () => {
-        connected = true;
         logger.info("Deepgram connection opened");
       });
 
       live.on(LiveTranscriptionEvents.Close, () => {
-        connected = false;
         logger.info("Deepgram connection closed");
       });
 

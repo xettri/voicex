@@ -25,6 +25,8 @@ export interface VoiceSessionConfig {
   audioFormat?: { encoding: "linear16" | "mulaw"; sampleRate: number };
 }
 
+const ECHO_SUPPRESSION_MS = 300;
+
 export function runVoiceSession(
   channel: CallChannel,
   sessionId: string,
@@ -52,12 +54,6 @@ export function runVoiceSession(
 
   let pipelineAbortController: AbortController | null = null;
   let pipelineGeneration = 0;
-  /**
-   * assistantSpeaking = true while audio is being played on the client.
-   * During this time we suppress STT to prevent echo from triggering interrupts.
-   * It's set true when first audio chunk is sent, and false when pipeline finishes
-   * or when an explicit interrupt happens.
-   */
   let assistantSpeaking = false;
   const MAX_HISTORY = 20;
   let conversationHistory: HistoryMessage[] = [];
@@ -118,13 +114,12 @@ export function runVoiceSession(
                 .catch(() => {});
             }
           },
-          onAudioChunk: (base64) => {
+          onAudioChunk: (audio) => {
             if (controller.signal.aborted) return;
             assistantSpeaking = true;
-            const buf = Buffer.from(base64, "base64");
-            channel.sendAudio(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength));
+            channel.sendAudio(audio);
           },
-          onAudioComplete: () => {
+          onSentenceEnd: () => {
             if (controller.signal.aborted) return;
             channel.sendAudioComplete?.();
           },
@@ -144,19 +139,17 @@ export function runVoiceSession(
         logger.info("Pipeline finished", { gen, elapsed, aborted: controller.signal.aborted });
         if (pipelineGeneration === gen) {
           pipelineAbortController = null;
-          // Give client time to finish playing the last audio chunk before re-enabling STT.
-          // Without this delay, the tail end of speaker audio gets picked up as user speech.
           setTimeout(() => {
             if (pipelineGeneration === gen) {
               assistantSpeaking = false;
               logger.info("STT re-enabled after playback");
             }
-          }, 800);
+          }, ECHO_SUPPRESSION_MS);
         }
       });
   };
 
-  const FALLBACK_DEBOUNCE_MS = 100;
+  const FALLBACK_DEBOUNCE_MS = 60;
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
   let pendingFinalText: string | null = null;
 
@@ -184,9 +177,14 @@ export function runVoiceSession(
   provider
     .startSession(
       (result) => {
-        // While assistant is speaking, suppress ALL STT to prevent echo loops.
-        // The user can still interrupt by speaking loud enough after playback ends.
-        if (assistantSpeaking) return;
+        if (assistantSpeaking) {
+          if (result.speechFinal && result.text.trim().length > 2) {
+            logger.info("User interrupted", { text: result.text.slice(0, 50) });
+            interrupt();
+            triggerPipeline(result.text);
+          }
+          return;
+        }
 
         channel.sendTranscript(result.text, result.isFinal, "user");
 
@@ -205,9 +203,11 @@ export function runVoiceSession(
           }, FALLBACK_DEBOUNCE_MS);
         }
       },
-      // onSpeechStart (VAD) — disabled for interrupt. Echo from speakers triggers
-      // false VAD events. Real interrupts happen via transcript → triggerPipeline.
-      undefined
+      () => {
+        if (assistantSpeaking) {
+          logger.info("VAD speech detected during playback, preparing interrupt");
+        }
+      }
     )
     .then((session) => {
       sttSession = session;

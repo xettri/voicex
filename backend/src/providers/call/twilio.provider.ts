@@ -1,9 +1,10 @@
 import type { WebSocket } from "ws";
 import { createLogger } from "../../shared/logger.js";
-import { convertMp3ToMulaw } from "../../shared/mp3-to-mulaw.js";
+import { createStreamingMulawConverter, type StreamingMulawConverter } from "../../shared/mp3-to-mulaw.js";
 import type { CallChannel } from "./call.interface.js";
 
 const logger = createLogger("TwilioProvider");
+const MULAW_CHUNK_SIZE = 640;
 
 interface TwilioMediaMessage {
   event: "media";
@@ -45,7 +46,8 @@ export function createTwilioCallChannel(ws: WebSocket): CallChannel {
   let onAudioCb: ((chunk: ArrayBuffer) => void) | null = null;
   let onCloseCb: (() => void) | null = null;
   let closed = false;
-  const mp3Buffer: Buffer[] = [];
+  let converter: StreamingMulawConverter | null = null;
+  let markCounter = 0;
 
   const sendMedia = (payloadBase64: string): void => {
     if (closed || !streamSid) return;
@@ -56,12 +58,53 @@ export function createTwilioCallChannel(ws: WebSocket): CallChannel {
     }
   };
 
+  const sendMark = (): void => {
+    if (closed || !streamSid) return;
+    markCounter++;
+    try {
+      ws.send(JSON.stringify({ event: "mark", streamSid, mark: { name: `sent-${markCounter}` } }));
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const destroyConverter = (): void => {
+    if (converter) {
+      converter.destroy();
+      converter = null;
+    }
+  };
+
+  const ensureConverter = (): StreamingMulawConverter => {
+    if (converter) return converter;
+
+    converter = createStreamingMulawConverter(
+      (mulawChunk) => {
+        for (let i = 0; i < mulawChunk.length; i += MULAW_CHUNK_SIZE) {
+          const slice = mulawChunk.subarray(i, Math.min(i + MULAW_CHUNK_SIZE, mulawChunk.length));
+          sendMedia(slice.toString("base64"));
+        }
+      },
+      () => {
+        sendMark();
+        converter = null;
+      },
+      (err) => {
+        logger.error("Streaming mulaw conversion error", err);
+        converter = null;
+      }
+    );
+
+    return converter;
+  };
+
   ws.on("message", (data: Buffer) => {
     const msg = parseTwilioMessage(data.toString());
     if (!msg) return;
 
     if (msg.event === "start") {
       streamSid = msg.streamSid;
+      logger.info("Twilio stream started", { streamSid });
       return;
     }
 
@@ -79,6 +122,7 @@ export function createTwilioCallChannel(ws: WebSocket): CallChannel {
   const handleClose = (): void => {
     if (closed) return;
     closed = true;
+    destroyConverter();
     onCloseCb?.();
   };
 
@@ -87,40 +131,27 @@ export function createTwilioCallChannel(ws: WebSocket): CallChannel {
 
   return {
     sendAudio(chunk: ArrayBuffer) {
-      mp3Buffer.push(Buffer.from(chunk));
+      const conv = ensureConverter();
+      conv.write(Buffer.from(chunk));
+    },
+    sendAudioComplete() {
+      if (converter) {
+        converter.end();
+      }
     },
     sendAudioStop() {
-      mp3Buffer.length = 0;
-      // Send clear event to stop Twilio playback
+      destroyConverter();
       if (streamSid && !closed) {
         try {
           ws.send(JSON.stringify({ event: "clear", streamSid }));
         } catch { /* ignore */ }
       }
     },
-    async sendAudioComplete() {
-      if (mp3Buffer.length === 0) return;
-      const mp3 = Buffer.concat(mp3Buffer);
-      mp3Buffer.length = 0;
-      try {
-        const mulaw = await convertMp3ToMulaw(mp3);
-        const payload = mulaw.toString("base64");
-        const chunkSize = 1024;
-        for (let i = 0; i < mulaw.length; i += chunkSize) {
-          const slice = mulaw.subarray(i, Math.min(i + chunkSize, mulaw.length));
-          sendMedia(slice.toString("base64"));
-        }
-      } catch (err) {
-        logger.error("Failed to convert TTS to mulaw", err);
-        this.sendError("Audio conversion failed");
-      }
-    },
     sendTranscript(_text, _isFinal, _role?) {
-      /* Twilio doesn't support transcript in stream; skip */
+      /* Twilio doesn't support transcript in stream */
     },
     sendError(message) {
-        logger.info("Twilio error", { message });
-      /* Twilio stream has no error message type; we log */
+      logger.info("Twilio error", { message });
     },
     onAudio(cb) {
       onAudioCb = cb;
@@ -131,6 +162,7 @@ export function createTwilioCallChannel(ws: WebSocket): CallChannel {
     close() {
       if (closed) return;
       closed = true;
+      destroyConverter();
       try {
         ws.close();
       } catch {

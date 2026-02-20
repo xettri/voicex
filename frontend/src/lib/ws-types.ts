@@ -1,8 +1,8 @@
-/** Server → Client WebSocket message types */
+/** Server → Client WebSocket message types (text frames; binary frames = raw audio) */
 export type ServerMessage =
   | { type: "connected"; sessionId: string; historyKey?: string; timestamp: number }
   | { type: "transcript"; payload: { text: string; isFinal: boolean; timestamp: number; role?: "user" | "assistant" } }
-  | { type: "audio"; payload: string }
+  | { type: "audioEnd" }
   | { type: "audioStop" }
   | { type: "pong"; timestamp: number }
   | { type: "error"; payload: { message: string } };
@@ -27,8 +27,8 @@ export function parseServerMessage(data: string): ServerMessage | null {
         return { type: "transcript", payload: { text: p.text, isFinal: p.isFinal, timestamp: p.timestamp, role } };
       }
     }
-    if (type === "audio" && typeof msg.payload === "string") {
-      return { type: "audio", payload: msg.payload };
+    if (type === "audioEnd") {
+      return { type: "audioEnd" };
     }
     if (type === "audioStop") {
       return { type: "audioStop" };

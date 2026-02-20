@@ -2,11 +2,14 @@ import type { WebSocket, RawData } from "ws";
 import { parseClientMessage } from "../../shared/ws-types.js";
 import type { CallChannel } from "./call.interface.js";
 
+const STREAM_CHUNK_SIZE = 4096;
+
 export function createWebSocketCallChannel(ws: WebSocket): CallChannel {
   let onAudioCb: ((chunk: ArrayBuffer) => void) | null = null;
   let onCloseCb: (() => void) | null = null;
   let closed = false;
-  const audioBuffer: ArrayBuffer[] = [];
+  let audioBuffer: Buffer[] = [];
+  let bufferedBytes = 0;
 
   const sendJson = (data: unknown): void => {
     if (closed) return;
@@ -17,9 +20,25 @@ export function createWebSocketCallChannel(ws: WebSocket): CallChannel {
     }
   };
 
+  const sendBinary = (data: Buffer): void => {
+    if (closed) return;
+    try {
+      ws.send(data, { binary: true });
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const flushAudioBuffer = (): void => {
+    if (audioBuffer.length === 0) return;
+    const combined = Buffer.concat(audioBuffer);
+    audioBuffer = [];
+    bufferedBytes = 0;
+    sendBinary(combined);
+  };
+
   ws.on("message", (data: RawData, isBinary: boolean) => {
     if (isBinary) {
-      // Binary frame = raw audio from client
       const buf = Buffer.from(data as Buffer);
       const ab = new ArrayBuffer(buf.byteLength);
       new Uint8Array(ab).set(buf);
@@ -42,6 +61,8 @@ export function createWebSocketCallChannel(ws: WebSocket): CallChannel {
   const handleClose = (): void => {
     if (closed) return;
     closed = true;
+    audioBuffer = [];
+    bufferedBytes = 0;
     onCloseCb?.();
   };
 
@@ -50,23 +71,19 @@ export function createWebSocketCallChannel(ws: WebSocket): CallChannel {
 
   return {
     sendAudio(chunk: ArrayBuffer) {
-      audioBuffer.push(chunk);
+      audioBuffer.push(Buffer.from(chunk));
+      bufferedBytes += chunk.byteLength;
+      if (bufferedBytes >= STREAM_CHUNK_SIZE) {
+        flushAudioBuffer();
+      }
     },
     sendAudioComplete() {
-      if (audioBuffer.length === 0) return;
-      const totalLen = audioBuffer.reduce((sum, b) => sum + b.byteLength, 0);
-      const combined = new Uint8Array(totalLen);
-      let offset = 0;
-      for (const buf of audioBuffer) {
-        combined.set(new Uint8Array(buf), offset);
-        offset += buf.byteLength;
-      }
-      audioBuffer.length = 0;
-      const base64 = Buffer.from(combined).toString("base64");
-      sendJson({ type: "audio", payload: base64 });
+      flushAudioBuffer();
+      sendJson({ type: "audioEnd" });
     },
     sendAudioStop() {
-      audioBuffer.length = 0;
+      audioBuffer = [];
+      bufferedBytes = 0;
       sendJson({ type: "audioStop" });
     },
     sendTranscript(text, isFinal, role) {
@@ -84,6 +101,8 @@ export function createWebSocketCallChannel(ws: WebSocket): CallChannel {
     close() {
       if (closed) return;
       closed = true;
+      audioBuffer = [];
+      bufferedBytes = 0;
       try {
         ws.close();
       } catch {

@@ -22,13 +22,13 @@ export interface PipelineDeps {
 
 export interface PipelineCallbacks {
   onTranscript: (text: string) => void;
-  onAudioChunk: (base64: string) => void;
-  onAudioComplete?: () => void;
+  onAudioChunk: (audio: ArrayBuffer) => void;
+  onSentenceEnd?: () => void;
 }
 
-/** Flush on sentence boundaries. Only flush on actual sentence enders, not commas/semicolons. */
 const SENTENCE_END = /[.!?]\s*$/;
-const MIN_CHARS = 60;
+const MIN_CHARS = 20;
+const FIRST_FLUSH_MS = 400;
 
 export type LLMMessage = { role: "system" | "user" | "assistant"; content: string };
 
@@ -50,24 +50,32 @@ export function createVoicePipelineService(deps: PipelineDeps) {
 
       let fullReply = "";
       let sentenceBuffer = "";
+      let sentenceCount = 0;
+      let firstTokenTime = 0;
 
-      // Use a serialized async queue backed by a chain of promises
       let ttsChain: Promise<void> = Promise.resolve();
 
       const enqueueTts = (text: string): void => {
+        const idx = sentenceCount++;
         ttsChain = ttsChain.then(async () => {
           if (signal?.aborted) return;
+          const ttsStart = Date.now();
           try {
             await deps.tts.streamAudio(
               text,
               (chunk) => {
                 if (signal?.aborted) return;
-                const base64 = Buffer.from(chunk).toString("base64");
-                callbacks.onAudioChunk(base64);
+                callbacks.onAudioChunk(chunk);
               },
               signal
             );
-            if (!signal?.aborted) callbacks.onAudioComplete?.();
+            if (!signal?.aborted) {
+              callbacks.onSentenceEnd?.();
+              const ttsMs = Date.now() - ttsStart;
+              if (idx === 0) {
+                logger.info("First sentence audio complete", { ttsMs, chars: text.length });
+              }
+            }
           } catch (err) {
             if (signal?.aborted) return;
             const msg = err instanceof Error ? err.message : String(err);
@@ -82,6 +90,8 @@ export function createVoicePipelineService(deps: PipelineDeps) {
         if (text) enqueueTts(text);
       };
 
+      let flushTimer: ReturnType<typeof setTimeout> | null = null;
+
       const startTime = Date.now();
 
       try {
@@ -91,7 +101,24 @@ export function createVoicePipelineService(deps: PipelineDeps) {
             if (signal?.aborted) return;
             fullReply += token;
             sentenceBuffer += token;
-            if (SENTENCE_END.test(sentenceBuffer) || sentenceBuffer.length >= MIN_CHARS) {
+
+            if (!firstTokenTime) {
+              firstTokenTime = Date.now();
+              logger.info("First LLM token", { ttft: firstTokenTime - startTime });
+              flushTimer = setTimeout(() => {
+                flushTimer = null;
+                if (sentenceBuffer.trim() && !signal?.aborted) {
+                  logger.info("Time-based flush", { chars: sentenceBuffer.trim().length });
+                  flushBuffer();
+                }
+              }, FIRST_FLUSH_MS);
+            }
+
+            if (SENTENCE_END.test(sentenceBuffer) && sentenceBuffer.trim().length >= 8) {
+              if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
+              flushBuffer();
+            } else if (sentenceBuffer.length >= MIN_CHARS && SENTENCE_END.test(sentenceBuffer)) {
+              if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
               flushBuffer();
             }
           },
@@ -101,6 +128,8 @@ export function createVoicePipelineService(deps: PipelineDeps) {
         if (signal?.aborted) return;
         logger.error("LLM failed", { err, userText: userText.slice(0, 50) });
         throw err;
+      } finally {
+        if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
       }
 
       if (signal?.aborted) return;
@@ -110,17 +139,15 @@ export function createVoicePipelineService(deps: PipelineDeps) {
         return;
       }
 
-      // Flush remaining buffer
       if (sentenceBuffer.trim()) enqueueTts(sentenceBuffer.trim());
 
       const llmMs = Date.now() - startTime;
-      logger.info("LLM done", { replyLen: fullReply.length, llmMs });
+      logger.info("LLM done", { replyLen: fullReply.length, llmMs, sentences: sentenceCount });
 
       if (!signal?.aborted) {
         callbacks.onTranscript(fullReply);
       }
 
-      // Wait for all TTS to finish (or abort)
       await ttsChain;
     },
   };

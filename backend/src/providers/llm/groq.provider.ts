@@ -17,11 +17,11 @@ export function createGroqProvider(apiKey: string): LLMProvider {
           Authorization: `Bearer ${apiKey}`,
         },
         body: JSON.stringify({
-          model: "llama-3.1-8b-instant",
+          model: "llama-3.3-70b-versatile",
           messages,
           stream: true,
-          temperature: 0.7,
-          max_tokens: 150,
+          temperature: 0.6,
+          max_tokens: 200,
         }),
         signal,
       });

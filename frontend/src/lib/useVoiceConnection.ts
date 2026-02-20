@@ -30,7 +30,8 @@ const RECONNECT_DELAY_MS = 2000;
 const MAX_RECONNECT_ATTEMPTS = 3;
 
 export function useVoiceConnection(options?: {
-  onAudioChunk?: (base64: string) => void;
+  onAudioChunk?: (chunk: ArrayBuffer) => void;
+  onAudioEnd?: () => void;
   onAudioStop?: () => void;
   onError?: (message: string) => void;
 }): {
@@ -44,6 +45,7 @@ export function useVoiceConnection(options?: {
   const [transcript, setTranscript] = useState<TranscriptMessage[]>([]);
   const wsRef = useRef<WebSocket | null>(null);
   const onAudioChunkRef = useRef(options?.onAudioChunk);
+  const onAudioEndRef = useRef(options?.onAudioEnd);
   const onAudioStopRef = useRef(options?.onAudioStop);
   const onErrorRef = useRef(options?.onError);
   const intentionalDisconnectRef = useRef(false);
@@ -51,6 +53,7 @@ export function useVoiceConnection(options?: {
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   onAudioChunkRef.current = options?.onAudioChunk;
+  onAudioEndRef.current = options?.onAudioEnd;
   onAudioStopRef.current = options?.onAudioStop;
   onErrorRef.current = options?.onError;
 
@@ -67,13 +70,19 @@ export function useVoiceConnection(options?: {
     setStatus("connecting");
     const url = getWsUrl();
     const ws = new WebSocket(url);
+    ws.binaryType = "arraybuffer";
 
     ws.onopen = (): void => {
       reconnectAttemptsRef.current = 0;
     };
 
-    ws.onmessage = (event: MessageEvent<string>): void => {
-      const msg = parseServerMessage(event.data);
+    ws.onmessage = (event: MessageEvent): void => {
+      if (event.data instanceof ArrayBuffer) {
+        onAudioChunkRef.current?.(event.data);
+        return;
+      }
+
+      const msg = parseServerMessage(event.data as string);
       if (!msg) return;
 
       if (msg.type === "connected") {
@@ -87,8 +96,8 @@ export function useVoiceConnection(options?: {
           const next = [...prev, msg.payload];
           return next.length > MAX_TRANSCRIPT ? next.slice(-MAX_TRANSCRIPT) : next;
         });
-      } else if (msg.type === "audio") {
-        onAudioChunkRef.current?.(msg.payload);
+      } else if (msg.type === "audioEnd") {
+        onAudioEndRef.current?.();
       } else if (msg.type === "audioStop") {
         onAudioStopRef.current?.();
       } else if (msg.type === "error") {
@@ -100,7 +109,6 @@ export function useVoiceConnection(options?: {
       wsRef.current = null;
       setStatus("disconnected");
 
-      // Auto-reconnect if not intentional
       if (!intentionalDisconnectRef.current && reconnectAttemptsRef.current < MAX_RECONNECT_ATTEMPTS) {
         reconnectAttemptsRef.current++;
         const delay = RECONNECT_DELAY_MS * reconnectAttemptsRef.current;
@@ -110,9 +118,7 @@ export function useVoiceConnection(options?: {
       }
     };
 
-    ws.onerror = (): void => {
-      // onclose will fire after this
-    };
+    ws.onerror = (): void => {};
 
     wsRef.current = ws;
   }, []);
@@ -135,10 +141,7 @@ export function useVoiceConnection(options?: {
 
   const sendAudio = useCallback((chunk: ArrayBuffer): void => {
     if (wsRef.current?.readyState !== WebSocket.OPEN) return;
-
-    const bytes = new Uint8Array(chunk);
-    const base64 = btoa(String.fromCharCode.apply(null, Array.from(bytes)));
-    wsRef.current.send(JSON.stringify({ type: "audio", payload: base64 }));
+    wsRef.current.send(chunk);
   }, []);
 
   useEffect((): (() => void) => {
